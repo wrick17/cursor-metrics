@@ -2,7 +2,7 @@
   "name": "cursor-usage",
   "displayName": "Cursor Usage",
   "description": "Shows your Cursor IDE usage (included requests and on-demand spend) in the status bar",
-  "version": "0.3.1",
+  "version": "0.3.2",
   "publisher": "wrick17",
   "license": "MIT",
   "repository": {
@@ -12,6 +12,7 @@
   "engines": {
     "vscode": "^1.85.0"
   },
+  "icon": "icon.png",
   "categories": ["Other"],
   "activationEvents": ["onStartupFinished"],
   "main": "./dist/extension.js",
