@@ -1,10 +1,13 @@
 {
-  "name": "bun-react-template",
+  "name": "cursor-usage",
   "version": "0.1.0",
   "private": true,
   "type": "module",
+  "bin": {
+    "cursor-usage": "src/index.ts"
+  },
   "scripts": {
-    "dev": "bun --hot src/index.ts",
+    "dev": "bun --hot src/index.ts --fg",
     "start": "NODE_ENV=production bun src/index.ts",
     "build": "bun run build.ts"
   },

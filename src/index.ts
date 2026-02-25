@@ -1,8 +1,78 @@
+#!/usr/bin/env bun
 import { serve } from "bun";
 import { Database } from "bun:sqlite";
+import { exec, spawn } from "child_process";
+import { existsSync, openSync, readFileSync, unlinkSync, writeFileSync } from "fs";
 import { homedir } from "os";
 import { join } from "path";
-import index from "./index.html";
+
+const args = process.argv.slice(2);
+
+const PID_FILE = join(homedir(), ".cursor-usage.pid");
+const LOG_FILE = join(homedir(), ".cursor-usage.log");
+
+if (args.includes("-h") || args.includes("--help")) {
+  console.log(`cursor-usage - Cursor IDE usage dashboard
+
+Usage: cursor-usage [options]
+
+Options:
+  -p, --port <number>  Port to run the server on (default: 5432)
+  -o, --open           Open the dashboard in your browser
+  -k, --kill           Stop a running cursor-usage process
+      --fg             Run in foreground (don't daemonize)
+  -h, --help           Show this help message`);
+  process.exit(0);
+}
+
+if (args.includes("-k") || args.includes("--kill")) {
+  if (!existsSync(PID_FILE)) {
+    console.log("No cursor-usage process found");
+    process.exit(1);
+  }
+  const pid = Number(readFileSync(PID_FILE, "utf-8").trim());
+  try {
+    process.kill(pid, "SIGTERM");
+    console.log(`Stopped cursor-usage (pid ${pid})`);
+  } catch {
+    console.log(`Process ${pid} not running, cleaning up stale PID file`);
+  }
+  try { unlinkSync(PID_FILE); } catch {}
+  process.exit(0);
+}
+
+function parsePort(): number {
+  const idx = args.findIndex(a => a === "--port" || a === "-p");
+  if (idx !== -1 && args[idx + 1]) return Number(args[idx + 1]);
+  return 5432;
+}
+
+const shouldOpen = args.includes("--open") || args.includes("-o");
+const isDaemon = args.includes("--daemon");
+const isForeground = args.includes("--fg");
+
+if (!isDaemon && !isForeground) {
+  const port = parsePort();
+  const childArgs = [import.meta.filename, "--daemon", "-p", String(port)];
+  const out = openSync(LOG_FILE, "a");
+  const child = spawn("bun", childArgs, {
+    detached: true,
+    stdio: ["ignore", out, out],
+  });
+  child.unref();
+  writeFileSync(PID_FILE, String(child.pid));
+  console.log(`cursor-usage running in background (pid ${child.pid}) on port ${port}`);
+  console.log(`Logs: ${LOG_FILE}`);
+  if (shouldOpen) exec(`open http://localhost:${port}`);
+  process.exit(0);
+}
+
+process.on("SIGTERM", () => {
+  try { unlinkSync(PID_FILE); } catch {}
+  process.exit(0);
+});
+
+const index = await import("./index.html").then(m => m.default);
 
 const DB_PATH = join(
   homedir(),
@@ -121,7 +191,7 @@ fetchUsage();
 setInterval(fetchUsage, 60_000);
 
 const server = serve({
-  port: 5000,
+  port: parsePort(),
   routes: {
     "/*": index,
 
@@ -145,3 +215,7 @@ const server = serve({
 });
 
 console.log(`Server running at ${server.url}`);
+
+if (isForeground && shouldOpen) {
+  exec(`open ${server.url}`);
+}
