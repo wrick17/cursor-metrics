@@ -1,0 +1,11 @@
+.cursor/
+src/
+node_modules/
+esbuild.config.mjs
+tsconfig.json
+.gitignore
+.env
+.env.*
+*.tsbuildinfo
+*.vsix
+bun.lock
