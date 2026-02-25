@@ -3,13 +3,29 @@ import { configure, fetchUsageData, type UsagePayload } from "./cursor-api";
 
 let statusBarItem: vscode.StatusBarItem;
 let outputChannel: vscode.OutputChannel;
-let pollInterval: ReturnType<typeof setInterval> | undefined;
+let pollTimer: ReturnType<typeof setInterval> | undefined;
 let lastData: UsagePayload | null = null;
 let lastError: string | null = null;
 
 function log(msg: string) {
   const ts = new Date().toISOString().slice(11, 19);
   outputChannel.appendLine(`[${ts}] ${msg}`);
+}
+
+function getConfig() {
+  const cfg = vscode.workspace.getConfiguration("cursorUsage");
+  return {
+    pollInterval: cfg.get<number>("pollInterval", 5),
+    minimalMode: cfg.get<boolean>("minimalMode", false),
+  };
+}
+
+function startPolling() {
+  if (pollTimer) clearInterval(pollTimer);
+  const { pollInterval } = getConfig();
+  const ms = pollInterval * 60_000;
+  log(`Poll interval set to ${pollInterval} min`);
+  pollTimer = setInterval(updateUsage, ms);
 }
 
 function formatResetDate(iso: string): string {
@@ -28,8 +44,19 @@ function progressBar(ratio: number, length = 20): string {
 
 function updateStatusBar(data: UsagePayload) {
   const { includedRequests, onDemand } = data;
+  const { minimalMode } = getConfig();
 
-  statusBarItem.text = `$(pulse) ${includedRequests.used}/${includedRequests.limit} | $${onDemand.spendDollars.toFixed(2)}/$${onDemand.limitDollars}`;
+  const premiumExhausted = includedRequests.used >= includedRequests.limit;
+
+  if (minimalMode) {
+    if (premiumExhausted) {
+      statusBarItem.text = `$(pulse) $${onDemand.spendDollars.toFixed(2)}/$${onDemand.limitDollars}`;
+    } else {
+      statusBarItem.text = `$(pulse) ${includedRequests.used}/${includedRequests.limit}`;
+    }
+  } else {
+    statusBarItem.text = `$(pulse) ${includedRequests.used}/${includedRequests.limit} | $${onDemand.spendDollars.toFixed(2)}/$${onDemand.limitDollars}`;
+  }
 
   const reqRatio = includedRequests.limit > 0 ? includedRequests.used / includedRequests.limit : 0;
   const spendRatio = onDemand.limitDollars > 0 ? onDemand.spendDollars / onDemand.limitDollars : 0;
@@ -134,16 +161,25 @@ export function activate(context: vscode.ExtensionContext) {
   const showDetailsCmd = vscode.commands.registerCommand("cursor-usage.showDetails", showDetails);
   const refreshCmd = vscode.commands.registerCommand("cursor-usage.refresh", updateUsage);
 
-  context.subscriptions.push(statusBarItem, showDetailsCmd, refreshCmd, outputChannel);
+  const configListener = vscode.workspace.onDidChangeConfiguration((e) => {
+    if (e.affectsConfiguration("cursorUsage.pollInterval")) {
+      startPolling();
+    }
+    if (e.affectsConfiguration("cursorUsage.minimalMode") && lastData) {
+      updateStatusBar(lastData);
+    }
+  });
+
+  context.subscriptions.push(statusBarItem, showDetailsCmd, refreshCmd, configListener, outputChannel);
 
   log("Extension activated, fetching initial usage...");
   updateUsage();
-  pollInterval = setInterval(updateUsage, 60_000);
+  startPolling();
 }
 
 export function deactivate() {
-  if (pollInterval) {
-    clearInterval(pollInterval);
-    pollInterval = undefined;
+  if (pollTimer) {
+    clearInterval(pollTimer);
+    pollTimer = undefined;
   }
 }
