@@ -28,7 +28,9 @@ function getDbPath(): string {
   }
 }
 
-function getCursorToken(): { userId: string; sessionToken: string } | null {
+type AuthInfo = { userId: string; sessionToken: string; email: string | null };
+
+function getCursorToken(): AuthInfo | null {
   const dbPath = getDbPath();
   log(`DB path: ${dbPath}`);
 
@@ -37,12 +39,10 @@ function getCursorToken(): { userId: string; sessionToken: string } | null {
     return null;
   }
 
-  const query = "SELECT value FROM ItemTable WHERE key = 'cursorAuth/accessToken'";
-  const jwt = execSync(`sqlite3 "${dbPath}" "${query}"`, {
-    encoding: "utf-8",
-    timeout: 10_000,
-  }).trim();
+  const run = (query: string) =>
+    execSync(`sqlite3 "${dbPath}" "${query}"`, { encoding: "utf-8", timeout: 10_000 }).trim();
 
+  const jwt = run("SELECT value FROM ItemTable WHERE key = 'cursorAuth/accessToken'");
   if (!jwt) {
     log("No accessToken found in database");
     return null;
@@ -53,7 +53,15 @@ function getCursorToken(): { userId: string; sessionToken: string } | null {
   const userId: string = payload.sub.split("|")[1];
   log(`Parsed userId: ${userId}`);
 
-  return { userId, sessionToken: `${userId}%3A%3A${jwt}` };
+  let email: string | null = null;
+  try {
+    email = run("SELECT value FROM ItemTable WHERE key = 'cursorAuth/cachedEmail'") || null;
+    log(`Cached email: ${email}`);
+  } catch {
+    log("Could not read cachedEmail from database");
+  }
+
+  return { userId, sessionToken: `${userId}%3A%3A${jwt}`, email };
 }
 
 function cursorHeaders(sessionToken: string) {
@@ -71,6 +79,42 @@ function nextMonth(iso: string): string {
   return d.toISOString();
 }
 
+type SetupCache = {
+  isTeamMember: boolean;
+  teamId?: number;
+  maxRequestUsage: number;
+};
+
+let cachedSetup: SetupCache | null = null;
+
+async function ensureSetup(
+  userId: string,
+  headers: ReturnType<typeof cursorHeaders>,
+): Promise<SetupCache | null> {
+  if (cachedSetup) return cachedSetup;
+
+  log("Running one-time setup (stripe + usage)...");
+  const [stripeRes, usageRes] = await Promise.all([
+    fetch("https://cursor.com/api/auth/stripe", { headers }),
+    fetch(`https://cursor.com/api/usage?user=${userId}`, { headers }),
+  ]);
+
+  log(`Setup: Stripe ${stripeRes.status}, Usage ${usageRes.status}`);
+
+  const stripe = stripeRes.ok ? await stripeRes.json() : null;
+  const usage = usageRes.ok ? await usageRes.json() : null;
+  const gpt4 = usage?.["gpt-4"] ?? {};
+
+  cachedSetup = {
+    isTeamMember: !!(stripe?.isTeamMember && stripe.teamId),
+    teamId: stripe?.teamId,
+    maxRequestUsage: gpt4.maxRequestUsage ?? gpt4.numRequests ?? 0,
+  };
+
+  log(`Setup cached: team=${cachedSetup.isTeamMember}, teamId=${cachedSetup.teamId}, maxReq=${cachedSetup.maxRequestUsage}`);
+  return cachedSetup;
+}
+
 export async function fetchUsageData(): Promise<UsagePayload | null> {
   log("--- Fetching usage data ---");
 
@@ -81,61 +125,87 @@ export async function fetchUsageData(): Promise<UsagePayload | null> {
   }
 
   const headers = cursorHeaders(auth.sessionToken);
-  const post = (url: string, body: Record<string, unknown> = {}) =>
-    fetch(url, { method: "POST", headers, body: JSON.stringify(body) });
-
-  const [usageRes, stripeRes, meRes] = await Promise.all([
-    fetch(`https://cursor.com/api/usage?user=${auth.userId}`, { headers }),
-    fetch("https://cursor.com/api/auth/stripe", { headers }),
-    fetch("https://cursor.com/api/auth/me", { headers }),
-  ]);
-
-  log(`Usage API: ${usageRes.status}, Stripe: ${stripeRes.status}, Me: ${meRes.status}`);
-
-  if (!usageRes.ok) {
-    log(`Usage API failed: ${usageRes.status} ${await usageRes.text().catch(() => "")}`);
+  const setup = await ensureSetup(auth.userId, headers);
+  if (!setup) {
+    log("Setup failed");
     return null;
   }
 
-  const usage = await usageRes.json();
+  if (setup.isTeamMember) {
+    return fetchTeamUsage(auth, headers, setup);
+  }
+  return fetchSoloUsage(auth, headers);
+}
+
+async function fetchTeamUsage(
+  auth: AuthInfo,
+  headers: ReturnType<typeof cursorHeaders>,
+  setup: SetupCache,
+): Promise<UsagePayload | null> {
+  const res = await fetch("https://cursor.com/api/dashboard/get-team-spend", {
+    method: "POST",
+    headers,
+    body: JSON.stringify({ teamId: setup.teamId }),
+  });
+
+  if (!res.ok) {
+    log(`get-team-spend failed: ${res.status}`);
+    return null;
+  }
+
+  const data = await res.json();
+  const members: any[] = data.teamMemberSpend ?? [];
+  const me = members.find((m: any) => m.email === auth.email || String(m.userId) === auth.userId);
+
+  if (!me) {
+    log(`Could not find current user in team spend (email=${auth.email}, userId=${auth.userId})`);
+    return null;
+  }
+
+  const resetsAt = data.nextCycleStart
+    ? new Date(Number(data.nextCycleStart)).toISOString()
+    : null;
+
+  const result: UsagePayload = {
+    includedRequests: {
+      used: me.fastPremiumRequests ?? 0,
+      limit: setup.maxRequestUsage,
+    },
+    onDemand: {
+      spendDollars: (me.spendCents ?? 0) / 100,
+      limitDollars: me.hardLimitOverrideDollars ?? 0,
+    },
+    resetsAt,
+  };
+
+  log(`Result: ${result.includedRequests.used}/${result.includedRequests.limit} reqs, $${result.onDemand.spendDollars}/$${result.onDemand.limitDollars}`);
+  return result;
+}
+
+async function fetchSoloUsage(
+  auth: AuthInfo,
+  headers: ReturnType<typeof cursorHeaders>,
+): Promise<UsagePayload | null> {
+  const res = await fetch(`https://cursor.com/api/usage?user=${auth.userId}`, { headers });
+
+  if (!res.ok) {
+    log(`Usage API failed: ${res.status}`);
+    return null;
+  }
+
+  const usage = await res.json();
   const gpt4 = usage["gpt-4"] ?? {};
   const resetsAt = usage.startOfMonth ? nextMonth(usage.startOfMonth) : null;
 
-  let spendDollars = 0;
-  let limitDollars = 200;
-
-  const stripe = stripeRes.ok ? await stripeRes.json() : null;
-  const me = meRes.ok ? await meRes.json() : null;
-
-  if (stripe?.isTeamMember && stripe.teamId) {
-    log(`Team member detected, teamId: ${stripe.teamId}`);
-    const [spendRes, limitRes] = await Promise.all([
-      post("https://cursor.com/api/dashboard/get-team-spend", { teamId: stripe.teamId }),
-      post("https://cursor.com/api/dashboard/get-hard-limit", { teamId: stripe.teamId }),
-    ]);
-
-    if (spendRes.ok) {
-      const { teamMemberSpend } = await spendRes.json();
-      const mySpend = teamMemberSpend?.find(
-        (m: any) => m.email === me?.email || m.userId === me?.id,
-      );
-      if (mySpend) {
-        spendDollars = (mySpend.spendCents ?? 0) / 100;
-        limitDollars = mySpend.hardLimitOverrideDollars ?? limitDollars;
-      }
-    }
-
-    if (limitRes.ok) {
-      const limitData = await limitRes.json();
-      limitDollars = limitData.hardLimitPerUser ?? limitDollars;
-    }
-  }
-
   const result: UsagePayload = {
-    includedRequests: { used: gpt4.numRequests ?? 0, limit: gpt4.maxRequestUsage ?? 500 },
-    onDemand: { spendDollars, limitDollars },
+    includedRequests: {
+      used: gpt4.numRequests ?? 0,
+      limit: gpt4.maxRequestUsage ?? 0,
+    },
+    onDemand: { spendDollars: 0, limitDollars: 0 },
     resetsAt,
   };
-  log(`Result: ${result.includedRequests.used}/${result.includedRequests.limit} reqs, $${result.onDemand.spendDollars}/$${result.onDemand.limitDollars}`);
+
+  log(`Result: ${result.includedRequests.used}/${result.includedRequests.limit} reqs`);
   return result;
 }
