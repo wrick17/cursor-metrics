@@ -3,9 +3,13 @@ import { configure, fetchUsageData, type UsagePayload } from "./cursor-api";
 
 let statusBarItem: vscode.StatusBarItem;
 let outputChannel: vscode.OutputChannel;
-let pollTimer: ReturnType<typeof setInterval> | undefined;
+let debounceTimer: ReturnType<typeof setTimeout> | undefined;
 let lastData: UsagePayload | null = null;
 let lastError: string | null = null;
+let lastFetchTime = 0;
+let isFetching = false;
+
+const DEBOUNCE_MS = 30_000;
 
 function log(msg: string) {
   const ts = new Date().toISOString().slice(11, 19);
@@ -20,26 +24,55 @@ function getConfig() {
   };
 }
 
-function startPolling() {
-  if (pollTimer) clearInterval(pollTimer);
-  const { pollInterval } = getConfig();
-  const ms = pollInterval * 60_000;
-  log(`Poll interval set to ${pollInterval} min`);
-  pollTimer = setInterval(updateUsage, ms);
+function getCooldownMs(): number {
+  return getConfig().pollInterval * 60_000;
+}
+
+function scheduleRefresh() {
+  if (debounceTimer) clearTimeout(debounceTimer);
+  debounceTimer = setTimeout(() => {
+    debounceTimer = undefined;
+    if (Date.now() - lastFetchTime >= getCooldownMs()) {
+      updateUsage();
+    }
+  }, DEBOUNCE_MS);
+}
+
+function refreshOnFocus(state: vscode.WindowState) {
+  if (state.focused && Date.now() - lastFetchTime >= getCooldownMs()) {
+    updateUsage();
+  }
 }
 
 function formatResetDate(iso: string): string {
-  return new Date(iso).toLocaleDateString("en-US", {
+  const resetDate = new Date(iso);
+  const now = new Date();
+  const diffMs = resetDate.getTime() - now.getTime();
+  const daysLeft = Math.max(0, Math.ceil(diffMs / 86_400_000));
+  const formatted = resetDate.toLocaleDateString("en-US", {
     month: "short",
     day: "numeric",
     year: "numeric",
   });
+  return `in ${daysLeft} day${daysLeft !== 1 ? "s" : ""} on ${formatted}`;
 }
 
-function progressBar(ratio: number, length = 20): string {
+function progressBar(ratio: number): string {
   const clamped = Math.min(Math.max(ratio, 0), 1);
-  const filled = Math.round(clamped * length);
-  return "\u2588".repeat(filled) + "\u2591".repeat(length - filled);
+  const width = 220;
+  const height = 10;
+  const r = height / 2;
+  const fillWidth = Math.round(clamped * width);
+
+  let svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}">`;
+  svg += `<rect width="${width}" height="${height}" rx="${r}" ry="${r}" fill="rgba(255,255,255,0.18)"/>`;
+  if (fillWidth > 0) {
+    svg += `<rect width="${fillWidth}" height="${height}" rx="${r}" ry="${r}" fill="rgba(255,255,255,0.82)"/>`;
+  }
+  svg += `</svg>`;
+
+  const encoded = Buffer.from(svg).toString("base64");
+  return `![](data:image/svg+xml;base64,${encoded})`;
 }
 
 function updateStatusBar(data: UsagePayload) {
@@ -68,11 +101,11 @@ function updateStatusBar(data: UsagePayload) {
   let md = `### $(pulse) Cursor Usage\n\n`;
   md += `**Included Requests**\n\n`;
   md += `${includedRequests.used} / ${includedRequests.limit} (${Math.round(reqRatio * 100)}%)\n\n`;
-  md += `\`${progressBar(reqRatio)}\`\n\n`;
+  md += `${progressBar(reqRatio)}\n\n`;
   md += `---\n\n`;
   md += `**On-Demand Spend**\n\n`;
   md += `$${onDemand.spendDollars.toFixed(2)} / $${onDemand.limitDollars.toFixed(2)} (${Math.round(spendRatio * 100)}%)\n\n`;
-  md += `\`${progressBar(spendRatio)}\`\n\n`;
+  md += `${progressBar(spendRatio)}\n\n`;
 
   if (data.resetsAt) {
     md += `---\n\n`;
@@ -87,6 +120,12 @@ function updateStatusBar(data: UsagePayload) {
 }
 
 async function updateUsage() {
+  if (isFetching) return;
+  isFetching = true;
+
+  statusBarItem.text = statusBarItem.text.replace("$(pulse)", "$(loading~spin)");
+  await new Promise((r) => setTimeout(r, 0));
+
   try {
     const data = await fetchUsageData();
     if (data) {
@@ -98,6 +137,8 @@ async function updateUsage() {
       if (!lastData) {
         statusBarItem.text = "$(warning) Usage unavailable";
         statusBarItem.tooltip = "Could not fetch Cursor usage data. Click to see options.";
+      } else {
+        statusBarItem.text = statusBarItem.text.replace("$(loading~spin)", "$(pulse)");
       }
     }
   } catch (err: any) {
@@ -107,7 +148,12 @@ async function updateUsage() {
     if (!lastData) {
       statusBarItem.text = "$(warning) Usage unavailable";
       statusBarItem.tooltip = `Error: ${msg}`;
+    } else {
+      statusBarItem.text = statusBarItem.text.replace("$(loading~spin)", "$(pulse)");
     }
+  } finally {
+    isFetching = false;
+    lastFetchTime = Date.now();
   }
 }
 
@@ -162,24 +208,32 @@ export function activate(context: vscode.ExtensionContext) {
   const refreshCmd = vscode.commands.registerCommand("cursor-usage.refresh", updateUsage);
 
   const configListener = vscode.workspace.onDidChangeConfiguration((e) => {
-    if (e.affectsConfiguration("cursorUsage.pollInterval")) {
-      startPolling();
-    }
     if (e.affectsConfiguration("cursorUsage.minimalMode") && lastData) {
       updateStatusBar(lastData);
     }
   });
 
-  context.subscriptions.push(statusBarItem, showDetailsCmd, refreshCmd, configListener, outputChannel);
+  const docChangeListener = vscode.workspace.onDidChangeTextDocument((e) => {
+    if (e.document.uri.scheme === "file") {
+      scheduleRefresh();
+    }
+  });
+
+  const focusListener = vscode.window.onDidChangeWindowState(refreshOnFocus);
+
+  context.subscriptions.push(
+    statusBarItem, showDetailsCmd, refreshCmd,
+    configListener, docChangeListener, focusListener,
+    outputChannel,
+  );
 
   log("Extension activated, fetching initial usage...");
   updateUsage();
-  startPolling();
 }
 
 export function deactivate() {
-  if (pollTimer) {
-    clearInterval(pollTimer);
-    pollTimer = undefined;
+  if (debounceTimer) {
+    clearTimeout(debounceTimer);
+    debounceTimer = undefined;
   }
 }
