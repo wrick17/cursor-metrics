@@ -49,8 +49,11 @@ function updateStatusBar(data: UsagePayload) {
 
   if (data.resetsAt) {
     md += `---\n\n`;
-    md += `*Resets ${formatResetDate(data.resetsAt)}*`;
+    md += `*Resets ${formatResetDate(data.resetsAt)}*\n\n`;
   }
+
+  md += `---\n\n`;
+  md += `[Open Dashboard](https://cursor.com/dashboard) | [Refresh](command:cursor-usage.refresh)`;
 
   tooltip.appendMarkdown(md);
   statusBarItem.tooltip = tooltip;
