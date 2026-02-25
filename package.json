@@ -31,7 +31,7 @@
     "build": "node esbuild.config.mjs --production",
     "watch": "node esbuild.config.mjs --watch",
     "package": "bun run build && bunx @vscode/vsce package --no-dependencies",
-    "publish": "bunx ovsx publish cursor-usage-0.1.0.vsix -p $OPEN_VSX_TOKEN"
+    "release": "bun run package && bunx ovsx publish cursor-usage-$(node -p \"require('./package.json').version\").vsix -p $OPEN_VSX_TOKEN"
   },
   "devDependencies": {
     "@types/node": "^25.3.0",
