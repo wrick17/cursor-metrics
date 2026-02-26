@@ -2,7 +2,7 @@
   "name": "cursor-usage",
   "displayName": "Cursor Usage",
   "description": "Shows your Cursor IDE usage (included requests and on-demand spend) in the status bar",
-  "version": "0.3.3",
+  "version": "0.4.0",
   "publisher": "wrick17",
   "license": "MIT",
   "repository": {
@@ -47,6 +47,17 @@
           "type": "boolean",
           "default": false,
           "description": "Show only the active metric: premium requests if not exhausted, or credits if premium is used up"
+        },
+        "cursorUsage.usageDuration": {
+          "type": "string",
+          "default": "30d",
+          "enum": ["1d", "7d", "30d"],
+          "enumDescriptions": [
+            "Last 24 hours",
+            "Last 7 days",
+            "Last 30 days"
+          ],
+          "description": "Time range for the usage-by-model breakdown in the tooltip"
         }
       }
     }

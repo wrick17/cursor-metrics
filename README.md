@@ -5,7 +5,8 @@ Shows your Cursor IDE usage directly in the status bar. Displays included reques
 ## Features
 
 - **Status bar**: Compact usage display -- `500/500 | $2.76/$200`
-- **Rich tooltip**: Hover for a full breakdown with SVG progress bars and reset countdown
+- **Rich tooltip**: Hover for a side-by-side breakdown with SVG progress bars, reset countdown, and per-model usage table
+- **Usage by model**: See tokens and requests broken down by model (e.g. `claude-4.6-opus-high-thinking`, `gpt-5.3-codex`) with a configurable time range
 - **Loading indicator**: Spinning icon in the status bar while usage data is being fetched
 - **Click for details**: Notification with usage summary + "Open Dashboard" button
 - **Smart polling**: Refreshes usage data only when you're actively working (on document edits and window focus), not on a constant timer
@@ -26,12 +27,13 @@ Shows your Cursor IDE usage directly in the status bar. Displays included reques
 |---------|---------|-------------|
 | `cursorUsage.pollInterval` | `5` | Minimum cooldown between refreshes, in minutes (1, 5, 10, 30, or 60) |
 | `cursorUsage.minimalMode` | `false` | Show only the active metric: premium requests if not exhausted, or on-demand spend if they are |
+| `cursorUsage.usageDuration` | `30d` | Time range for the usage-by-model breakdown in the tooltip (1d, 7d, or 30d) |
 
 ## How it works
 
 The extension reads your Cursor session token from the local SQLite database and fetches usage data from Cursor's APIs. No API key, manual configuration, or cookie embezzlement required -- just sign in to Cursor.
 
-Usage data refreshes automatically when you edit files (debounced at 30 seconds) or return focus to the window, with a cooldown based on your `pollInterval` setting. No API calls are made while the editor is idle.
+Usage data refreshes automatically when you edit files (debounced at 30 seconds) or return focus to the window, with a cooldown based on your `pollInterval` setting. No API calls are made while the editor is idle. Auth tokens and API responses are cached to avoid redundant work when multiple data sources are fetched in parallel.
 
 ## License
 

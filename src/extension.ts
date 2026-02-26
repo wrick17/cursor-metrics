@@ -1,5 +1,5 @@
 import * as vscode from "vscode";
-import { configure, fetchUsageData, type UsagePayload } from "./cursor-api";
+import { configure, fetchUsageData, fetchUsageEvents, type UsagePayload, type UsageEvent } from "./cursor-api";
 
 let statusBarItem: vscode.StatusBarItem;
 let outputChannel: vscode.OutputChannel;
@@ -8,6 +8,7 @@ let lastData: UsagePayload | null = null;
 let lastError: string | null = null;
 let lastFetchTime = 0;
 let isFetching = false;
+let lastEvents: UsageEvent[] | null = null;
 
 const DEBOUNCE_MS = 30_000;
 
@@ -21,6 +22,7 @@ function getConfig() {
   return {
     pollInterval: cfg.get<number>("pollInterval", 5),
     minimalMode: cfg.get<boolean>("minimalMode", false),
+    usageDuration: cfg.get<"1d" | "7d" | "30d">("usageDuration", "30d"),
   };
 }
 
@@ -62,9 +64,9 @@ function isLightTheme(): boolean {
   return kind === vscode.ColorThemeKind.Light || kind === vscode.ColorThemeKind.HighContrastLight;
 }
 
-function progressBar(ratio: number): string {
+function progressBar(ratio: number, barWidth = 220): string {
   const clamped = Math.min(Math.max(ratio, 0), 1);
-  const width = 220;
+  const width = barWidth;
   const height = 10;
   const r = height / 2;
   const fillWidth = Math.round(clamped * width);
@@ -82,6 +84,33 @@ function progressBar(ratio: number): string {
 
   const encoded = Buffer.from(svg).toString("base64");
   return `![](data:image/svg+xml;base64,${encoded})`;
+}
+
+function formatTokens(n: number): string {
+  if (n >= 1_000_000_000) return `${(n / 1_000_000_000).toFixed(1)}B`;
+  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
+  if (n >= 1_000) return `${(n / 1_000).toFixed(1)}K`;
+  return String(n);
+}
+
+type ModelAggregate = { model: string; totalTokens: number; requests: number };
+
+function aggregateByModel(events: UsageEvent[], duration: "1d" | "7d" | "30d"): ModelAggregate[] {
+  const daysMap = { "1d": 1, "7d": 7, "30d": 30 };
+  const cutoff = Date.now() - daysMap[duration] * 86_400_000;
+
+  const map = new Map<string, { totalTokens: number; requests: number }>();
+  for (const e of events) {
+    if (e.timestamp < cutoff) continue;
+    const entry = map.get(e.model) ?? { totalTokens: 0, requests: 0 };
+    entry.totalTokens += e.totalTokens;
+    entry.requests += e.requests;
+    map.set(e.model, entry);
+  }
+
+  return [...map.entries()]
+    .map(([model, agg]) => ({ model, ...agg }))
+    .sort((a, b) => b.totalTokens - a.totalTokens);
 }
 
 function updateStatusBar(data: UsagePayload) {
@@ -107,14 +136,30 @@ function updateStatusBar(data: UsagePayload) {
   tooltip.isTrusted = true;
   tooltip.supportThemeIcons = true;
 
+  const barW = 150;
   let md = `### $(pulse) Cursor Usage\n\n`;
-  md += `**Included Requests**\n\n`;
-  md += `${includedRequests.used} / ${includedRequests.limit} (${Math.round(reqRatio * 100)}%)\n\n`;
-  md += `${progressBar(reqRatio)}\n\n`;
-  md += `---\n\n`;
-  md += `**On-Demand Spend**\n\n`;
-  md += `$${onDemand.spendDollars.toFixed(2)} / $${onDemand.limitDollars.toFixed(2)} (${Math.round(spendRatio * 100)}%)\n\n`;
-  md += `${progressBar(spendRatio)}\n\n`;
+  md += `| **Included Requests** | **On-Demand Spend** |\n`;
+  md += `|:---|:---|\n`;
+  md += `| ${includedRequests.used} / ${includedRequests.limit} (${Math.round(reqRatio * 100)}%) | $${onDemand.spendDollars.toFixed(2)} / $${onDemand.limitDollars.toFixed(2)} (${Math.round(spendRatio * 100)}%) |\n`;
+  md += `| ${progressBar(reqRatio, barW)} | ${progressBar(spendRatio, barW)} |\n\n`;
+
+  if (lastEvents && lastEvents.length > 0) {
+    const { usageDuration } = getConfig();
+    const models = aggregateByModel(lastEvents, usageDuration);
+    const label = { "1d": "24 hours", "7d": "7 days", "30d": "30 days" }[usageDuration];
+    md += `---\n\n`;
+    md += `**Usage by Model** *(${label})* &nbsp;[Change](command:cursor-usage.openDurationSetting)\n\n`;
+    if (models.length > 0) {
+      md += `| Model | Tokens | Requests |\n`;
+      md += `|:------|-------:|---------:|\n`;
+      for (const m of models) {
+        md += `| ${m.model} | ${formatTokens(m.totalTokens)} | ${m.requests} |\n`;
+      }
+      md += `\n`;
+    } else {
+      md += `*No usage in this period*\n\n`;
+    }
+  }
 
   if (data.resetsAt) {
     md += `---\n\n`;
@@ -136,7 +181,22 @@ async function updateUsage() {
   await new Promise((r) => setTimeout(r, 0));
 
   try {
-    const data = await fetchUsageData();
+    const [dataResult, eventsResult] = await Promise.allSettled([
+      fetchUsageData(),
+      fetchUsageEvents(),
+    ]);
+
+    if (eventsResult.status === "fulfilled" && eventsResult.value.length > 0) {
+      lastEvents = eventsResult.value;
+    } else if (eventsResult.status === "rejected") {
+      log(`Usage events fetch failed: ${eventsResult.reason}`);
+    }
+
+    const data = dataResult.status === "fulfilled" ? dataResult.value : null;
+    if (dataResult.status === "rejected") {
+      log(`Usage data fetch failed: ${dataResult.reason}`);
+    }
+
     if (data) {
       lastData = data;
       lastError = null;
@@ -215,9 +275,12 @@ export function activate(context: vscode.ExtensionContext) {
 
   const showDetailsCmd = vscode.commands.registerCommand("cursor-usage.showDetails", showDetails);
   const refreshCmd = vscode.commands.registerCommand("cursor-usage.refresh", updateUsage);
+  const openDurationCmd = vscode.commands.registerCommand("cursor-usage.openDurationSetting", () => {
+    vscode.commands.executeCommand("workbench.action.openSettings", "cursorUsage.usageDuration");
+  });
 
   const configListener = vscode.workspace.onDidChangeConfiguration((e) => {
-    if (e.affectsConfiguration("cursorUsage.minimalMode") && lastData) {
+    if ((e.affectsConfiguration("cursorUsage.minimalMode") || e.affectsConfiguration("cursorUsage.usageDuration")) && lastData) {
       updateStatusBar(lastData);
     }
   });
@@ -235,7 +298,7 @@ export function activate(context: vscode.ExtensionContext) {
   });
 
   context.subscriptions.push(
-    statusBarItem, showDetailsCmd, refreshCmd,
+    statusBarItem, showDetailsCmd, refreshCmd, openDurationCmd,
     configListener, docChangeListener, focusListener, themeListener,
     outputChannel,
   );

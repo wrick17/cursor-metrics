@@ -9,6 +9,14 @@ export type UsagePayload = {
   resetsAt: string | null;
 };
 
+export type UsageEvent = {
+  timestamp: number;
+  model: string;
+  kind: string;
+  totalTokens: number;
+  requests: number;
+};
+
 type Logger = (msg: string) => void;
 
 let log: Logger = () => {};
@@ -30,7 +38,15 @@ function getDbPath(): string {
 
 type AuthInfo = { userId: string; sessionToken: string; email: string | null };
 
+let cachedAuth: { info: AuthInfo | null; ts: number } = { info: null, ts: 0 };
+const AUTH_CACHE_TTL = 10_000;
+
 function getCursorToken(): AuthInfo | null {
+  if (cachedAuth.info && Date.now() - cachedAuth.ts < AUTH_CACHE_TTL) {
+    log("Using cached auth token");
+    return cachedAuth.info;
+  }
+
   const dbPath = getDbPath();
   log(`DB path: ${dbPath}`);
 
@@ -61,7 +77,9 @@ function getCursorToken(): AuthInfo | null {
     log("Could not read cachedEmail from database");
   }
 
-  return { userId, sessionToken: `${userId}%3A%3A${jwt}`, email };
+  const info = { userId, sessionToken: `${userId}%3A%3A${jwt}`, email };
+  cachedAuth = { info, ts: Date.now() };
+  return info;
 }
 
 function cursorHeaders(sessionToken: string) {
@@ -208,4 +226,79 @@ async function fetchSoloUsage(
 
   log(`Result: ${result.includedRequests.used}/${result.includedRequests.limit} reqs`);
   return result;
+}
+
+function parseEventKind(kind: string): string {
+  if (kind === "USAGE_EVENT_KIND_USAGE_BASED") return "On-Demand";
+  if (kind === "USAGE_EVENT_KIND_ERRORED_NOT_CHARGED") return "Errored";
+  return "Included";
+}
+
+export async function fetchUsageEvents(): Promise<UsageEvent[]> {
+  log("--- Fetching usage events ---");
+
+  const auth = getCursorToken();
+  if (!auth) {
+    log("Failed to get auth token for events");
+    return [];
+  }
+
+  const headers = cursorHeaders(auth.sessionToken);
+  const setup = await ensureSetup(auth.userId, headers);
+  const teamId = setup?.teamId ?? 0;
+
+  const endDate = Date.now();
+  const startDate = endDate - 30 * 86_400_000;
+  const pageSize = 500;
+  let page = 1;
+  const allEvents: UsageEvent[] = [];
+
+  while (true) {
+    const res = await fetch("https://cursor.com/api/dashboard/get-filtered-usage-events", {
+      method: "POST",
+      headers,
+      body: JSON.stringify({
+        teamId,
+        startDate: String(startDate),
+        endDate: String(endDate),
+        page,
+        pageSize,
+      }),
+    });
+
+    if (!res.ok) {
+      log(`get-filtered-usage-events failed: ${res.status}`);
+      break;
+    }
+
+    const data = await res.json();
+    const events: any[] = data.usageEventsDisplay ?? [];
+
+    if (page === 1) {
+      log(`Total usage events available: ${data.totalUsageEventsCount ?? "unknown"}`);
+    }
+
+    for (const e of events) {
+      const tok = e.tokenUsage ?? {};
+      const totalTokens =
+        (tok.inputTokens ?? 0) +
+        (tok.outputTokens ?? 0) +
+        (tok.cacheWriteTokens ?? 0) +
+        (tok.cacheReadTokens ?? 0);
+
+      allEvents.push({
+        timestamp: e.timestamp ?? 0,
+        model: e.model ?? "unknown",
+        kind: parseEventKind(e.kind ?? ""),
+        totalTokens,
+        requests: e.numRequests ?? 1,
+      });
+    }
+
+    if (events.length < pageSize) break;
+    page++;
+  }
+
+  log(`Fetched ${allEvents.length} usage events across ${page} page(s)`);
+  return allEvents;
 }
