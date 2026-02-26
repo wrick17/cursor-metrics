@@ -57,6 +57,11 @@ function formatResetDate(iso: string): string {
   return `in ${daysLeft} day${daysLeft !== 1 ? "s" : ""} on ${formatted}`;
 }
 
+function isLightTheme(): boolean {
+  const kind = vscode.window.activeColorTheme.kind;
+  return kind === vscode.ColorThemeKind.Light || kind === vscode.ColorThemeKind.HighContrastLight;
+}
+
 function progressBar(ratio: number): string {
   const clamped = Math.min(Math.max(ratio, 0), 1);
   const width = 220;
@@ -64,10 +69,14 @@ function progressBar(ratio: number): string {
   const r = height / 2;
   const fillWidth = Math.round(clamped * width);
 
+  const light = isLightTheme();
+  const trackColor = light ? "rgba(0,0,0,0.12)" : "rgba(255,255,255,0.18)";
+  const fillColor = light ? "rgba(0,0,0,0.55)" : "rgba(255,255,255,0.82)";
+
   let svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}">`;
-  svg += `<rect width="${width}" height="${height}" rx="${r}" ry="${r}" fill="rgba(255,255,255,0.18)"/>`;
+  svg += `<rect width="${width}" height="${height}" rx="${r}" ry="${r}" fill="${trackColor}"/>`;
   if (fillWidth > 0) {
-    svg += `<rect width="${fillWidth}" height="${height}" rx="${r}" ry="${r}" fill="rgba(255,255,255,0.82)"/>`;
+    svg += `<rect width="${fillWidth}" height="${height}" rx="${r}" ry="${r}" fill="${fillColor}"/>`;
   }
   svg += `</svg>`;
 
@@ -221,9 +230,13 @@ export function activate(context: vscode.ExtensionContext) {
 
   const focusListener = vscode.window.onDidChangeWindowState(refreshOnFocus);
 
+  const themeListener = vscode.window.onDidChangeActiveColorTheme(() => {
+    if (lastData) updateStatusBar(lastData);
+  });
+
   context.subscriptions.push(
     statusBarItem, showDetailsCmd, refreshCmd,
-    configListener, docChangeListener, focusListener,
+    configListener, docChangeListener, focusListener, themeListener,
     outputChannel,
   );
 
