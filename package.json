@@ -65,8 +65,8 @@
   "scripts": {
     "build": "node esbuild.config.mjs --production",
     "watch": "node esbuild.config.mjs --watch",
-    "package": "bun run build && bunx @vscode/vsce package --no-dependencies",
-    "release": "bun run package && bunx ovsx publish cursor-usage-$(node -p \"require('./package.json').version\").vsix -p $OPEN_VSX_TOKEN"
+    "package": "bun run build && mkdir -p build && VERSION=$(node -p \"require('./package.json').version\") && bunx @vscode/vsce package --no-dependencies --out \"build/cursor-usage-${VERSION}.vsix\"",
+    "release": "bun run package && VERSION=$(node -p \"require('./package.json').version\") && bunx ovsx publish \"build/cursor-usage-${VERSION}.vsix\" -p $OPEN_VSX_TOKEN"
   },
   "devDependencies": {
     "@types/node": "^25.3.0",
