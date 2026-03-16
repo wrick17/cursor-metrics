@@ -94,6 +94,7 @@ function formatTokens(n: number): string {
 }
 
 type ModelAggregate = { model: string; totalTokens: number; requests: number };
+type OnDemandUsage = UsagePayload["onDemand"];
 
 function aggregateByModel(events: UsageEvent[], duration: "1d" | "7d" | "30d"): ModelAggregate[] {
   const daysMap = { "1d": 1, "7d": 7, "30d": 30 };
@@ -113,24 +114,54 @@ function aggregateByModel(events: UsageEvent[], duration: "1d" | "7d" | "30d"): 
     .sort((a, b) => b.totalTokens - a.totalTokens);
 }
 
+function isOnDemandVisible(onDemand: OnDemandUsage): boolean {
+  return onDemand.state !== "disabled";
+}
+
+function getOnDemandRatio(onDemand: OnDemandUsage): number | null {
+  if (onDemand.state !== "limited") return null;
+  if (onDemand.limitDollars === null || onDemand.limitDollars <= 0) return null;
+  return onDemand.spendDollars / onDemand.limitDollars;
+}
+
+function formatOnDemandStatus(onDemand: OnDemandUsage): string {
+  if (onDemand.state === "unlimited") {
+    return `$${onDemand.spendDollars.toFixed(2)}`;
+  }
+  return `$${onDemand.spendDollars.toFixed(2)}/$${(onDemand.limitDollars ?? 0).toFixed(2)}`;
+}
+
+function formatOnDemandTooltipCell(onDemand: OnDemandUsage): string {
+  if (onDemand.state === "unlimited") {
+    return `$${onDemand.spendDollars.toFixed(2)}`;
+  }
+  const ratio = getOnDemandRatio(onDemand);
+  const pct = ratio === null ? 0 : Math.round(ratio * 100);
+  return `$${onDemand.spendDollars.toFixed(2)} / $${(onDemand.limitDollars ?? 0).toFixed(2)} (${pct}%)`;
+}
+
 function updateStatusBar(data: UsagePayload) {
   const { includedRequests, onDemand } = data;
   const { minimalMode } = getConfig();
 
   const premiumExhausted = includedRequests.used >= includedRequests.limit;
+  const onDemandVisible = isOnDemandVisible(onDemand);
 
   if (minimalMode) {
-    if (premiumExhausted) {
-      statusBarItem.text = `$(pulse) $${onDemand.spendDollars.toFixed(2)}/$${onDemand.limitDollars}`;
+    if (premiumExhausted && onDemandVisible) {
+      statusBarItem.text = `$(pulse) ${formatOnDemandStatus(onDemand)}`;
     } else {
       statusBarItem.text = `$(pulse) ${includedRequests.used}/${includedRequests.limit}`;
     }
   } else {
-    statusBarItem.text = `$(pulse) ${includedRequests.used}/${includedRequests.limit} | $${onDemand.spendDollars.toFixed(2)}/$${onDemand.limitDollars}`;
+    const includedText = `${includedRequests.used}/${includedRequests.limit}`;
+    statusBarItem.text = onDemandVisible
+      ? `$(pulse) ${includedText} | ${formatOnDemandStatus(onDemand)}`
+      : `$(pulse) ${includedText}`;
   }
 
   const reqRatio = includedRequests.limit > 0 ? includedRequests.used / includedRequests.limit : 0;
-  const spendRatio = onDemand.limitDollars > 0 ? onDemand.spendDollars / onDemand.limitDollars : 0;
+  const spendRatio = getOnDemandRatio(onDemand);
 
   const tooltip = new vscode.MarkdownString();
   tooltip.isTrusted = true;
@@ -138,10 +169,17 @@ function updateStatusBar(data: UsagePayload) {
 
   const barW = 150;
   let md = `### $(pulse) Cursor Usage\n\n`;
-  md += `| **Included Requests** | **On-Demand Spend** |\n`;
-  md += `|:---|:---|\n`;
-  md += `| ${includedRequests.used} / ${includedRequests.limit} (${Math.round(reqRatio * 100)}%) | $${onDemand.spendDollars.toFixed(2)} / $${onDemand.limitDollars.toFixed(2)} (${Math.round(spendRatio * 100)}%) |\n`;
-  md += `| ${progressBar(reqRatio, barW)} | ${progressBar(spendRatio, barW)} |\n\n`;
+  if (onDemandVisible) {
+    md += `| **Included Requests** | **On-Demand Spend** |\n`;
+    md += `|:---|:---|\n`;
+    md += `| ${includedRequests.used} / ${includedRequests.limit} (${Math.round(reqRatio * 100)}%) | ${formatOnDemandTooltipCell(onDemand)} |\n`;
+    md += `| ${progressBar(reqRatio, barW)} | ${spendRatio === null ? "" : progressBar(spendRatio, barW)} |\n\n`;
+  } else {
+    md += `| **Included Requests** |\n`;
+    md += `|:---|\n`;
+    md += `| ${includedRequests.used} / ${includedRequests.limit} (${Math.round(reqRatio * 100)}%) |\n`;
+    md += `| ${progressBar(reqRatio, barW)} |\n\n`;
+  }
 
   if (lastEvents && lastEvents.length > 0) {
     const { usageDuration } = getConfig();
@@ -186,7 +224,7 @@ async function updateUsage() {
       fetchUsageEvents(),
     ]);
 
-    if (eventsResult.status === "fulfilled" && eventsResult.value.length > 0) {
+    if (eventsResult.status === "fulfilled") {
       lastEvents = eventsResult.value;
     } else if (eventsResult.status === "rejected") {
       log(`Usage events fetch failed: ${eventsResult.reason}`);
@@ -243,10 +281,17 @@ async function showDetails() {
 
   const { includedRequests, onDemand, resetsAt } = lastData;
   const reqPct = includedRequests.limit > 0 ? Math.round((includedRequests.used / includedRequests.limit) * 100) : 0;
-  const spendPct = onDemand.limitDollars > 0 ? Math.round((onDemand.spendDollars / onDemand.limitDollars) * 100) : 0;
+  const spendRatio = getOnDemandRatio(onDemand);
+  const spendPct = spendRatio === null ? null : Math.round(spendRatio * 100);
+  const onDemandVisible = isOnDemandVisible(onDemand);
 
   let message = `Requests: ${includedRequests.used}/${includedRequests.limit} (${reqPct}%)`;
-  message += ` | Spend: $${onDemand.spendDollars.toFixed(2)}/$${onDemand.limitDollars.toFixed(2)} (${spendPct}%)`;
+  if (onDemandVisible) {
+    const spendText = onDemand.state === "unlimited"
+      ? `$${onDemand.spendDollars.toFixed(2)}`
+      : `$${onDemand.spendDollars.toFixed(2)}/$${(onDemand.limitDollars ?? 0).toFixed(2)} (${spendPct ?? 0}%)`;
+    message += ` | Spend: ${spendText}`;
+  }
   if (resetsAt) message += ` | Resets: ${formatResetDate(resetsAt)}`;
 
   const action = await vscode.window.showInformationMessage(
