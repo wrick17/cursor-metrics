@@ -1,5 +1,6 @@
 import * as vscode from "vscode";
 import { configure, fetchUsageData, fetchUsageEvents, type UsagePayload, type UsageEvent } from "./cursor-api";
+import { buildUsageOverviewMarkdown } from "./tooltip";
 
 let statusBarItem: vscode.StatusBarItem;
 let outputChannel: vscode.OutputChannel;
@@ -64,7 +65,7 @@ function isLightTheme(): boolean {
   return kind === vscode.ColorThemeKind.Light || kind === vscode.ColorThemeKind.HighContrastLight;
 }
 
-function progressBar(ratio: number, barWidth = 220): string {
+function progressBarDataUri(ratio: number, barWidth = 220): string {
   const clamped = Math.min(Math.max(ratio, 0), 1);
   const width = barWidth;
   const height = 10;
@@ -83,7 +84,27 @@ function progressBar(ratio: number, barWidth = 220): string {
   svg += `</svg>`;
 
   const encoded = Buffer.from(svg).toString("base64");
-  return `![](data:image/svg+xml;base64,${encoded})`;
+  return `data:image/svg+xml;base64,${encoded}`;
+}
+
+function progressBarMarkdown(ratio: number, barWidth = 220): string {
+  return `![](${progressBarDataUri(ratio, barWidth)})`;
+}
+
+function progressBarHtml(ratio: number, barWidth = 220): string {
+  return `<img src="${progressBarDataUri(ratio, barWidth)}" width="${barWidth}" height="10" />`;
+}
+
+function summaryDividerHtml(height = 52): string {
+  const light = isLightTheme();
+  const strokeColor = light ? "rgba(0,0,0,0.12)" : "rgba(255,255,255,0.14)";
+  const svg = [
+    `<svg xmlns="http://www.w3.org/2000/svg" width="2" height="${height}" viewBox="0 0 2 ${height}">`,
+    `<rect x="0.5" y="0" width="1" height="${height}" fill="${strokeColor}"/>`,
+    `</svg>`,
+  ].join("");
+  const encoded = Buffer.from(svg).toString("base64");
+  return `<img src="data:image/svg+xml;base64,${encoded}" width="2" height="${height}" />`;
 }
 
 function formatTokens(n: number): string {
@@ -160,32 +181,28 @@ function updateStatusBar(data: UsagePayload) {
       : `$(pulse) ${includedText}`;
   }
 
-  const reqRatio = includedRequests.limit > 0 ? includedRequests.used / includedRequests.limit : 0;
-  const spendRatio = getOnDemandRatio(onDemand);
-
   const tooltip = new vscode.MarkdownString();
   tooltip.isTrusted = true;
   tooltip.supportThemeIcons = true;
+  tooltip.supportHtml = true;
 
   const barW = 150;
   let md = `### $(pulse) Cursor Usage\n\n`;
-  if (onDemandVisible) {
-    md += `| **Included Requests** | **On-Demand Spend** |\n`;
-    md += `|:---|:---|\n`;
-    md += `| ${includedRequests.used} / ${includedRequests.limit} (${Math.round(reqRatio * 100)}%) | ${formatOnDemandTooltipCell(onDemand)} |\n`;
-    md += `| ${progressBar(reqRatio, barW)} | ${spendRatio === null ? "" : progressBar(spendRatio, barW)} |\n\n`;
-  } else {
-    md += `| **Included Requests** |\n`;
-    md += `|:---|\n`;
-    md += `| ${includedRequests.used} / ${includedRequests.limit} (${Math.round(reqRatio * 100)}%) |\n`;
-    md += `| ${progressBar(reqRatio, barW)} |\n\n`;
-  }
+  md += buildUsageOverviewMarkdown(
+    { includedRequests, onDemand },
+    {
+      markdown: (ratio) => progressBarMarkdown(ratio, barW),
+      html: (ratio) => progressBarHtml(ratio, barW),
+      divider: () => summaryDividerHtml(),
+    },
+  );
+  md += `\n`;
 
   if (lastEvents && lastEvents.length > 0) {
     const { usageDuration } = getConfig();
     const models = aggregateByModel(lastEvents, usageDuration);
     const label = { "1d": "24 hours", "7d": "7 days", "30d": "30 days" }[usageDuration];
-    md += `---\n\n`;
+    md += `<hr>\n\n`;
     md += `**Usage by Model** *(${label})* &nbsp;[Change](command:cursor-usage.openDurationSetting)\n\n`;
     if (models.length > 0) {
       md += `| Model | Tokens | Requests |\n`;
@@ -200,11 +217,11 @@ function updateStatusBar(data: UsagePayload) {
   }
 
   if (data.resetsAt) {
-    md += `---\n\n`;
+    md += `<hr>\n\n`;
     md += `*Resets ${formatResetDate(data.resetsAt)}*\n\n`;
   }
 
-  md += `---\n\n`;
+  md += `<hr>\n\n`;
   md += `[Open Dashboard](https://cursor.com/dashboard) | [Refresh](command:cursor-usage.refresh)`;
 
   tooltip.appendMarkdown(md);
