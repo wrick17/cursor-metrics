@@ -21,7 +21,7 @@ describe("buildUsageOverviewMarkdown", () => {
     expect(markdown).toContain("<td><sub>On-demand</sub></td>");
     expect(markdown).toContain("<td width=\"2%\" rowspan=\"3\" valign=\"top\"><divider /></td>");
     expect(markdown).toContain("<strong>500 / 500</strong>");
-    expect(markdown).toContain("<strong>$66.89</strong>");
+    expect(markdown).toContain("<strong>$66.89 / $200.00</strong>");
     expect(markdown).toContain("<bar:1.00>");
     expect(markdown).toContain("<bar:0.33>");
     expect(markdown.match(/<table/g)?.length).toBe(1);

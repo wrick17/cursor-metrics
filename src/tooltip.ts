@@ -26,7 +26,10 @@ function formatIncludedValue(includedRequests: IncludedRequestsUsage): string {
 }
 
 function formatOnDemandValue(onDemand: OnDemandUsage): string {
-  return `$${onDemand.spendDollars.toFixed(2)}`;
+  if (onDemand.state === "unlimited") {
+    return `$${onDemand.spendDollars.toFixed(2)}`;
+  }
+  return `$${onDemand.spendDollars.toFixed(2)} / $${(onDemand.limitDollars ?? 0).toFixed(2)}`;
 }
 
 function buildSummaryTable(columns: SummaryColumn[], renderProgressBar: ProgressBarRenderer): string {
