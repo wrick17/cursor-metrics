@@ -2,7 +2,7 @@
   "name": "cursor-usage",
   "displayName": "Cursor Usage",
   "description": "Shows your Cursor IDE usage (included requests and on-demand spend) in the status bar",
-  "version": "0.4.3",
+  "version": "0.4.5",
   "publisher": "wrick17",
   "license": "MIT",
   "repository": {
@@ -13,8 +13,12 @@
     "vscode": "^1.85.0"
   },
   "icon": "icon.png",
-  "categories": ["Other"],
-  "activationEvents": ["onStartupFinished"],
+  "categories": [
+    "Other"
+  ],
+  "activationEvents": [
+    "onStartupFinished"
+  ],
   "main": "./dist/extension.js",
   "contributes": {
     "commands": [
@@ -33,7 +37,13 @@
         "cursorUsage.pollInterval": {
           "type": "number",
           "default": 5,
-          "enum": [1, 5, 10, 30, 60],
+          "enum": [
+            1,
+            5,
+            10,
+            30,
+            60
+          ],
           "enumDescriptions": [
             "Every 1 minute",
             "Every 5 minutes",
@@ -51,7 +61,11 @@
         "cursorUsage.usageDuration": {
           "type": "string",
           "default": "30d",
-          "enum": ["1d", "7d", "30d"],
+          "enum": [
+            "1d",
+            "7d",
+            "30d"
+          ],
           "enumDescriptions": [
             "Last 24 hours",
             "Last 7 days",

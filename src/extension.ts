@@ -8,7 +8,14 @@ import {
   type UsagePayload,
   type UsageEvent,
 } from "./cursor-api";
-import { aggregateByModel, formatDollarsFromCents } from "./model-breakdown";
+import {
+  buildDurationOptions,
+  getDurationLabel,
+  isRollingDuration,
+  isUsageDuration,
+  normalizeUsageDuration,
+} from "./duration-options";
+import { aggregateByModel, formatDollarsFromCents, type UsageDuration } from "./model-breakdown";
 import { buildUsageOverviewMarkdown } from "./tooltip";
 
 let statusBarItem: vscode.StatusBarItem;
@@ -20,8 +27,11 @@ let lastFetchTime = 0;
 let isFetching = false;
 let lastEvents: UsageEvent[] | null = null;
 let lastDailySpend: DailySpendRow[] | null = null;
+let selectedDuration: UsageDuration = "30d";
+let extensionContext: vscode.ExtensionContext | null = null;
 
 const DEBOUNCE_MS = 30_000;
+const USAGE_DURATION_KEY = "cursorUsage.selectedDuration";
 
 function log(msg: string) {
   const ts = new Date().toISOString().slice(11, 19);
@@ -33,8 +43,25 @@ function getConfig() {
   return {
     pollInterval: cfg.get<number>("pollInterval", 5),
     minimalMode: cfg.get<boolean>("minimalMode", false),
-    usageDuration: cfg.get<"1d" | "7d" | "30d">("usageDuration", "30d"),
+    usageDuration: cfg.get<string>("usageDuration", "30d"),
   };
+}
+
+function getSelectedDurationFromState(): UsageDuration {
+  const storedValue = extensionContext?.globalState.get<string>(USAGE_DURATION_KEY);
+  if (isUsageDuration(storedValue)) {
+    return storedValue;
+  }
+  const { usageDuration } = getConfig();
+  if (isRollingDuration(usageDuration)) {
+    return usageDuration;
+  }
+  return "30d";
+}
+
+function setSelectedDuration(duration: UsageDuration) {
+  selectedDuration = duration;
+  void extensionContext?.globalState.update(USAGE_DURATION_KEY, duration);
 }
 
 function getCooldownMs(): number {
@@ -223,11 +250,14 @@ function updateStatusBar(data: UsagePayload) {
   md += `\n`;
 
   if (lastEvents && lastEvents.length > 0) {
-    const { usageDuration } = getConfig();
-    const models = aggregateByModel(lastEvents, lastDailySpend ?? [], usageDuration);
-    const label = { "1d": "24 hours", "7d": "7 days", "30d": "30 days" }[usageDuration];
+    const usageDuration = normalizeUsageDuration(selectedDuration, Boolean(data.resetsAt));
+    if (usageDuration !== selectedDuration) {
+      setSelectedDuration(usageDuration);
+    }
+    const models = aggregateByModel(lastEvents, lastDailySpend ?? [], usageDuration, data.resetsAt);
+    const label = getDurationLabel(usageDuration);
     md += `<hr>\n\n`;
-    md += `**Usage by Model** *(${label})* &nbsp;[Change](command:cursor-usage.openDurationSetting)\n\n`;
+    md += `**Usage by Model** *(${label})* &nbsp;[Change](command:cursor-usage.selectDuration)\n\n`;
     const modelTableWidth = barW * 2 + 2;
     md += buildModelBreakdownTableMarkdown(models, modelTableWidth);
   }
@@ -347,7 +377,38 @@ async function showDetails() {
   }
 }
 
+async function selectUsageDuration() {
+  const hasBillingCycle = Boolean(lastData?.resetsAt);
+  const durationOptions = buildDurationOptions(hasBillingCycle);
+  const normalizedDuration = normalizeUsageDuration(selectedDuration, hasBillingCycle);
+  if (normalizedDuration !== selectedDuration) {
+    setSelectedDuration(normalizedDuration);
+  }
+
+  const selectedOption = await vscode.window.showQuickPick(
+    durationOptions.map((option) => ({
+      label: option.label,
+      value: option.value,
+      picked: option.value === normalizedDuration,
+    })),
+    {
+      placeHolder: "Select usage-by-model range",
+      title: "Cursor Usage Range",
+    },
+  );
+
+  if (!selectedOption) return;
+  if (selectedOption.value === selectedDuration) return;
+
+  setSelectedDuration(selectedOption.value);
+  if (lastData) {
+    updateStatusBar(lastData);
+  }
+}
+
 export function activate(context: vscode.ExtensionContext) {
+  extensionContext = context;
+  selectedDuration = getSelectedDurationFromState();
   outputChannel = vscode.window.createOutputChannel("Cursor Usage");
   log("Extension activating...");
 
@@ -360,12 +421,10 @@ export function activate(context: vscode.ExtensionContext) {
 
   const showDetailsCmd = vscode.commands.registerCommand("cursor-usage.showDetails", showDetails);
   const refreshCmd = vscode.commands.registerCommand("cursor-usage.refresh", updateUsage);
-  const openDurationCmd = vscode.commands.registerCommand("cursor-usage.openDurationSetting", () => {
-    vscode.commands.executeCommand("workbench.action.openSettings", "cursorUsage.usageDuration");
-  });
+  const selectDurationCmd = vscode.commands.registerCommand("cursor-usage.selectDuration", selectUsageDuration);
 
   const configListener = vscode.workspace.onDidChangeConfiguration((e) => {
-    if ((e.affectsConfiguration("cursorUsage.minimalMode") || e.affectsConfiguration("cursorUsage.usageDuration")) && lastData) {
+    if (e.affectsConfiguration("cursorUsage.minimalMode") && lastData) {
       updateStatusBar(lastData);
     }
   });
@@ -383,7 +442,7 @@ export function activate(context: vscode.ExtensionContext) {
   });
 
   context.subscriptions.push(
-    statusBarItem, showDetailsCmd, refreshCmd, openDurationCmd,
+    statusBarItem, showDetailsCmd, refreshCmd, selectDurationCmd,
     configListener, docChangeListener, focusListener, themeListener,
     outputChannel,
   );

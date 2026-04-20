@@ -19,7 +19,7 @@ describe("model breakdown aggregation", () => {
       { day: now - 40 * dayMs, category: "gpt-5.3-codex", spendCents: 999, totalTokens: 100_000 },
     ];
 
-    const totals = aggregateSpendByCategory(spendRows, "7d", now);
+    const totals = aggregateSpendByCategory(spendRows, "7d", null, now);
     expect(totals.get("gpt-5.3-codex")).toBe(200);
     expect(totals.get("gpt-5.4-high")).toBe(55);
     expect(totals.has("unknown")).toBeFalse();
@@ -35,7 +35,7 @@ describe("model breakdown aggregation", () => {
       { day: now - 1 * dayMs, category: "gpt-5.3-codex", spendCents: 320, totalTokens: 5000 },
     ];
 
-    const rows = aggregateByModel(events, spendRows, "7d", now);
+    const rows = aggregateByModel(events, spendRows, "7d", null, now);
     expect(rows).toEqual([
       { model: "gpt-5.3-codex", totalTokens: 5000, requests: 3, spendCents: 320 },
       { model: "composer-2", totalTokens: 1000, requests: 4, spendCents: 0 },
@@ -54,10 +54,10 @@ describe("model breakdown aggregation", () => {
       { day: now - 35 * dayMs, category: "gpt-5.3-codex", spendCents: 90, totalTokens: 300 },
     ];
 
-    const oneDay = aggregateByModel(events, spendRows, "1d", now);
+    const oneDay = aggregateByModel(events, spendRows, "1d", null, now);
     expect(oneDay).toHaveLength(0);
 
-    const sevenDays = aggregateByModel(events, spendRows, "7d", now);
+    const sevenDays = aggregateByModel(events, spendRows, "7d", null, now);
     expect(sevenDays[0]).toEqual({
       model: "gpt-5.3-codex",
       totalTokens: 100,
@@ -65,13 +65,48 @@ describe("model breakdown aggregation", () => {
       spendCents: 50,
     });
 
-    const thirtyDays = aggregateByModel(events, spendRows, "30d", now);
+    const thirtyDays = aggregateByModel(events, spendRows, "30d", null, now);
     expect(thirtyDays[0]).toEqual({
       model: "gpt-5.3-codex",
       totalTokens: 300,
       requests: 2,
       spendCents: 130,
     });
+  });
+
+  it("uses previous cycle boundary for billingCycle", () => {
+    const resetsAt = "2026-05-15T00:00:00.000Z";
+    const cycleStart = Date.UTC(2026, 3, 15, 0, 0, 0);
+
+    const events: UsageEvent[] = [
+      { timestamp: cycleStart - 1_000, model: "gpt-5.3-codex", kind: "Included", totalTokens: 50, requests: 1 },
+      { timestamp: cycleStart + 1_000, model: "gpt-5.3-codex", kind: "Included", totalTokens: 75, requests: 1 },
+    ];
+    const spendRows: DailySpendRow[] = [
+      { day: cycleStart - 1_000, category: "gpt-5.3-codex", spendCents: 20, totalTokens: 50 },
+      { day: cycleStart + 1_000, category: "gpt-5.3-codex", spendCents: 30, totalTokens: 75 },
+    ];
+
+    const rows = aggregateByModel(events, spendRows, "billingCycle", resetsAt, now);
+    expect(rows).toEqual([
+      { model: "gpt-5.3-codex", totalTokens: 75, requests: 1, spendCents: 30 },
+    ]);
+  });
+
+  it("keeps full current cycle for a 31-day month", () => {
+    const may31Noon = Date.UTC(2026, 4, 31, 12, 0, 0);
+    const resetsAt = "2026-06-01T00:00:00.000Z";
+    const cycleStart = Date.UTC(2026, 4, 1, 0, 0, 0);
+
+    const events: UsageEvent[] = [
+      { timestamp: cycleStart + 1000, model: "gpt-5.3-codex", kind: "Included", totalTokens: 111, requests: 1 },
+      { timestamp: cycleStart - 1000, model: "gpt-5.3-codex", kind: "Included", totalTokens: 222, requests: 1 },
+    ];
+
+    const rows = aggregateByModel(events, [], "billingCycle", resetsAt, may31Noon);
+    expect(rows).toEqual([
+      { model: "gpt-5.3-codex", totalTokens: 111, requests: 1, spendCents: 0 },
+    ]);
   });
 });
 
@@ -83,8 +118,9 @@ describe("model breakdown formatting", () => {
   });
 
   it("computes cutoff timestamps for all durations", () => {
-    expect(getDurationCutoff("1d", now)).toBe(now - 1 * dayMs);
-    expect(getDurationCutoff("7d", now)).toBe(now - 7 * dayMs);
-    expect(getDurationCutoff("30d", now)).toBe(now - 30 * dayMs);
+    expect(getDurationCutoff("1d", null, now)).toBe(now - 1 * dayMs);
+    expect(getDurationCutoff("7d", null, now)).toBe(now - 7 * dayMs);
+    expect(getDurationCutoff("30d", null, now)).toBe(now - 30 * dayMs);
+    expect(getDurationCutoff("billingCycle", "2026-05-01T00:00:00.000Z", now)).toBe(Date.UTC(2026, 3, 1, 0, 0, 0));
   });
 });

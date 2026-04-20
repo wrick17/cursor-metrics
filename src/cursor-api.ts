@@ -515,7 +515,7 @@ export async function fetchDailySpendByCategory(): Promise<DailySpendRow[]> {
   }
 
   const periodEndMs = Date.now();
-  const periodStartMs = periodEndMs - 30 * 86_400_000;
+  const periodStartMs = periodEndMs - 31 * 86_400_000;
   const res = await fetch("https://cursor.com/api/dashboard/get-daily-spend-by-category", {
     method: "POST",
     headers,
@@ -565,7 +565,7 @@ export async function fetchUsageEvents(): Promise<UsageEvent[]> {
   const teamId = setup?.teamId ?? 0;
 
   const endDate = Date.now();
-  const startDate = endDate - 30 * 86_400_000;
+  const startDate = endDate - 31 * 86_400_000;
   const pageSize = 500;
   let page = 1;
   const allEvents: UsageEvent[] = [];
