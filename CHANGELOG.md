@@ -2,6 +2,13 @@
 
 All notable changes to this project are documented in this file.
 
+## [0.4.7] - 2026-04-20
+
+### Changed
+- Moved usage-duration selection back into `cursorUsage.usageDuration` in Settings and made `Current Billing Cycle` the default.
+- Restored the tooltip `Change` action and routed it to the `cursorUsage.usageDuration` setting.
+- Added a friendly `Current Billing Cycle` label in the settings dropdown while still falling back to `30d` when billing reset metadata is unavailable.
+
 ## [0.4.6] - 2026-04-20
 
 ### Changed

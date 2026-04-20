@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test";
-import { buildUsageOverviewMarkdown } from "../src/tooltip";
+import { buildUsageByModelHeadingMarkdown, buildUsageOverviewMarkdown } from "../src/tooltip";
 
 const progressBar = {
   markdown: (ratio: number) => `[bar:${ratio.toFixed(2)}]`,
@@ -72,5 +72,14 @@ describe("buildUsageOverviewMarkdown", () => {
     expect(markdown).not.toContain("<divider />");
     expect(markdown).not.toContain("8% used");
     expect(markdown).not.toContain("On-demand");
+  });
+});
+
+describe("buildUsageByModelHeadingMarkdown", () => {
+  it("includes a Change link that routes to the duration setting", () => {
+    const markdown = buildUsageByModelHeadingMarkdown("billingCycle");
+
+    expect(markdown).toContain("**Usage by Model** *(Current Billing Cycle)*");
+    expect(markdown).toContain("[Change](command:cursor-usage.openDurationSetting)");
   });
 });

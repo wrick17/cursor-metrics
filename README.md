@@ -6,7 +6,7 @@ Shows your Cursor IDE usage directly in the status bar. Displays included reques
 
 - **Status bar**: Compact usage display -- `500/500 | $2.76/$200`
 - **Rich tooltip**: Hover for a side-by-side breakdown with SVG progress bars, reset countdown, and per-model usage table
-- **Usage by model**: See tokens and requests broken down by model (e.g. `claude-4.6-opus-high-thinking`, `gpt-5.3-codex`) with an in-tooltip range picker (1d, 7d, 30d, and Current Billing Cycle when available)
+- **Usage by model**: See tokens and requests broken down by model (e.g. `claude-4.6-opus-high-thinking`, `gpt-5.3-codex`) with a configurable range in Settings (1d, 7d, 30d, or Current Billing Cycle)
 - **Loading indicator**: Spinning icon in the status bar while usage data is being fetched
 - **Click for details**: Notification with usage summary + "Open Dashboard" button
 - **Smart polling**: Refreshes usage data only when you're actively working (on document edits and window focus), not on a constant timer
@@ -27,7 +27,7 @@ Shows your Cursor IDE usage directly in the status bar. Displays included reques
 |---------|---------|-------------|
 | `cursorUsage.pollInterval` | `5` | Minimum cooldown between refreshes, in minutes (1, 5, 10, 30, or 60) |
 | `cursorUsage.minimalMode` | `false` | Show only the active metric: premium requests if not exhausted, or on-demand spend if they are |
-| `cursorUsage.usageDuration` | `30d` | Legacy default used for migration to the in-tooltip range picker (1d, 7d, or 30d) |
+| `cursorUsage.usageDuration` | `billingCycle` | Time range for the usage-by-model breakdown (1d, 7d, 30d, or Current Billing Cycle). Falls back to `30d` when reset metadata is unavailable. |
 
 ## How it works
 

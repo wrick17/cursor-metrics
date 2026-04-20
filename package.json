@@ -2,7 +2,7 @@
   "name": "cursor-usage",
   "displayName": "Cursor Usage",
   "description": "Shows your Cursor IDE usage (included requests and on-demand spend) in the status bar",
-  "version": "0.4.6",
+  "version": "0.4.7",
   "publisher": "wrick17",
   "license": "MIT",
   "repository": {
@@ -60,18 +60,26 @@
         },
         "cursorUsage.usageDuration": {
           "type": "string",
-          "default": "30d",
+          "default": "billingCycle",
           "enum": [
             "1d",
             "7d",
-            "30d"
+            "30d",
+            "billingCycle"
+          ],
+          "enumItemLabels": [
+            "Last 24 hours",
+            "Last 7 days",
+            "Last 30 days",
+            "Current Billing Cycle"
           ],
           "enumDescriptions": [
             "Last 24 hours",
             "Last 7 days",
-            "Last 30 days"
+            "Last 30 days",
+            "Current billing cycle (falls back to Last 30 Days when reset metadata is unavailable)"
           ],
-          "description": "Time range for the usage-by-model breakdown in the tooltip"
+          "description": "Time range for the usage-by-model breakdown in the tooltip. Current Billing Cycle falls back to Last 30 Days when reset metadata is unavailable."
         }
       }
     }

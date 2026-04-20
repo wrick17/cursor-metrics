@@ -1,4 +1,6 @@
 import type { UsagePayload } from "./cursor-api";
+import { getDurationLabel } from "./duration-options";
+import type { UsageDuration } from "./model-breakdown";
 
 type IncludedRequestsUsage = UsagePayload["includedRequests"];
 type OnDemandUsage = UsagePayload["onDemand"];
@@ -8,6 +10,8 @@ type ProgressBarRenderer = {
   html: (ratio: number) => string;
   divider: () => string;
 };
+
+export const OPEN_DURATION_SETTING_COMMAND = "cursor-usage.openDurationSetting";
 
 function getOnDemandRatio(onDemand: OnDemandUsage): number | null {
   if (onDemand.state !== "limited") return null;
@@ -99,4 +103,8 @@ export function buildUsageOverviewMarkdown(
 ): string {
   const { includedRequests, onDemand } = data;
   return buildSummaryTable(buildSummaryColumns(includedRequests, onDemand, renderProgressBar), renderProgressBar);
+}
+
+export function buildUsageByModelHeadingMarkdown(duration: UsageDuration): string {
+  return `**Usage by Model** *(${getDurationLabel(duration)})* &nbsp;[Change](command:${OPEN_DURATION_SETTING_COMMAND})\n\n`;
 }
