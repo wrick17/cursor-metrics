@@ -35,6 +35,36 @@ The extension reads your Cursor session token from the local SQLite database and
 
 Usage data refreshes automatically when you edit files (debounced at 30 seconds) or return focus to the window, with a cooldown based on your `pollInterval` setting. No API calls are made while the editor is idle. Auth tokens and API responses are cached to avoid redundant work when multiple data sources are fetched in parallel.
 
+## Publishing
+
+This extension supports publishing to both Visual Studio Marketplace and Open VSX under the `wrick17` publisher.
+
+- Open VSX package id: `cursor-usage`
+- Visual Studio Marketplace package id: `cursor-usage-auto`
+- Display name on both marketplaces: `Cursor Usage`
+
+### One-time setup
+
+1. Create or verify the `wrick17` publisher in [Visual Studio Marketplace](https://marketplace.visualstudio.com/manage/publishers/).
+2. Create an Azure DevOps PAT with `Marketplace > Manage` scope and `All accessible organizations`, then export it as `VSCE_PAT`.
+3. Create an Open VSX access token and export it as `OPEN_VSX_TOKEN`.
+
+### Commands
+
+| Command | Description |
+|---------|-------------|
+| `bun run package` | Build and create `build/cursor-usage-<version>.vsix` |
+| `bun run package:vsm` | Build and create `build/cursor-usage-auto-<version>.vsix` for Visual Studio Marketplace |
+| `bun run publish:vsm` | Package and publish the Visual Studio Marketplace VSIX |
+| `bun run publish:ovsx` | Publish the existing VSIX to Open VSX |
+| `bun run publish:all` | Build/package both marketplace variants and publish them |
+| `bun run release` | Alias for `bun run publish:all` |
+
+### Typical flows
+
+- **Publish current version to Visual Studio Marketplace only**: `bun run publish:vsm`
+- **Publish a new version everywhere**: bump `version` in `package.json`, update `CHANGELOG.md`, then run `bun run release`
+
 ## License
 
 MIT

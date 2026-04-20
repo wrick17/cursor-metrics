@@ -2,7 +2,7 @@
   "name": "cursor-usage",
   "displayName": "Cursor Usage",
   "description": "Shows your Cursor IDE usage (included requests and on-demand spend) in the status bar",
-  "version": "0.4.7",
+  "version": "0.4.8",
   "publisher": "wrick17",
   "license": "MIT",
   "repository": {
@@ -88,7 +88,11 @@
     "build": "node esbuild.config.mjs --production",
     "watch": "node esbuild.config.mjs --watch",
     "package": "bun run build && mkdir -p build && VERSION=$(node -p \"require('./package.json').version\") && bunx @vscode/vsce package --no-dependencies --out \"build/cursor-usage-${VERSION}.vsix\"",
-    "release": "bun run package && VERSION=$(node -p \"require('./package.json').version\") && bunx ovsx publish \"build/cursor-usage-${VERSION}.vsix\" -p $OPEN_VSX_TOKEN"
+    "package:vsm": "bun run build && node scripts/prepare-vsm-package.mjs && VERSION=$(node -p \"require('./package.json').version\") && cd \"build/vsm-package\" && bunx @vscode/vsce package --no-dependencies --out \"../cursor-usage-auto-${VERSION}.vsix\"",
+    "publish:ovsx": "VERSION=$(node -p \"require('./package.json').version\") && bunx ovsx publish \"build/cursor-usage-${VERSION}.vsix\" -p \"$OPEN_VSX_TOKEN\"",
+    "publish:vsm": "bun run package:vsm && VERSION=$(node -p \"require('./package.json').version\") && bunx @vscode/vsce publish --packagePath \"build/cursor-usage-auto-${VERSION}.vsix\" -p \"$VSCE_PAT\"",
+    "publish:all": "bun run package && bun run publish:ovsx && bun run publish:vsm",
+    "release": "bun run publish:all"
   },
   "devDependencies": {
     "@types/node": "^25.3.0",
