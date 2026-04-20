@@ -1,5 +1,14 @@
 import * as vscode from "vscode";
-import { configure, fetchUsageData, fetchUsageEvents, type UsagePayload, type UsageEvent } from "./cursor-api";
+import {
+  configure,
+  fetchDailySpendByCategory,
+  fetchUsageData,
+  fetchUsageEvents,
+  type DailySpendRow,
+  type UsagePayload,
+  type UsageEvent,
+} from "./cursor-api";
+import { aggregateByModel, formatDollarsFromCents } from "./model-breakdown";
 import { buildUsageOverviewMarkdown } from "./tooltip";
 
 let statusBarItem: vscode.StatusBarItem;
@@ -10,6 +19,7 @@ let lastError: string | null = null;
 let lastFetchTime = 0;
 let isFetching = false;
 let lastEvents: UsageEvent[] | null = null;
+let lastDailySpend: DailySpendRow[] | null = null;
 
 const DEBOUNCE_MS = 30_000;
 
@@ -114,25 +124,39 @@ function formatTokens(n: number): string {
   return String(n);
 }
 
-type ModelAggregate = { model: string; totalTokens: number; requests: number };
 type OnDemandUsage = UsagePayload["onDemand"];
 
-function aggregateByModel(events: UsageEvent[], duration: "1d" | "7d" | "30d"): ModelAggregate[] {
-  const daysMap = { "1d": 1, "7d": 7, "30d": 30 };
-  const cutoff = Date.now() - daysMap[duration] * 86_400_000;
-
-  const map = new Map<string, { totalTokens: number; requests: number }>();
-  for (const e of events) {
-    if (e.timestamp < cutoff) continue;
-    const entry = map.get(e.model) ?? { totalTokens: 0, requests: 0 };
-    entry.totalTokens += e.totalTokens;
-    entry.requests += e.requests;
-    map.set(e.model, entry);
+function buildModelBreakdownTableMarkdown(
+  rows: Array<{ model: string; totalTokens: number; requests: number; spendCents: number }>,
+  tableWidth: number,
+): string {
+  if (rows.length === 0) {
+    return "*No usage in this period*\n\n";
   }
 
-  return [...map.entries()]
-    .map(([model, agg]) => ({ model, ...agg }))
-    .sort((a, b) => b.totalTokens - a.totalTokens);
+  const lines = [
+    `<table width="${tableWidth}" cellspacing="0" cellpadding="0">`,
+    `  <tr>`,
+    `    <th align="left" width="45%">Model</th>`,
+    `    <th align="right" width="15%">Requests</th>`,
+    `    <th align="right" width="20%">Tokens</th>`,
+    `    <th align="right" width="20%">Spend</th>`,
+    `  </tr>`,
+  ];
+
+  for (const row of rows) {
+    lines.push(
+      `  <tr>` +
+      `<td align="left">${row.model}</td>` +
+      `<td align="right">${row.requests}</td>` +
+      `<td align="right">${formatTokens(row.totalTokens)}</td>` +
+      `<td align="right">${formatDollarsFromCents(row.spendCents)}</td>` +
+      `</tr>`,
+    );
+  }
+
+  lines.push(`</table>`, ``);
+  return lines.join("\n");
 }
 
 function isOnDemandVisible(onDemand: OnDemandUsage): boolean {
@@ -200,20 +224,12 @@ function updateStatusBar(data: UsagePayload) {
 
   if (lastEvents && lastEvents.length > 0) {
     const { usageDuration } = getConfig();
-    const models = aggregateByModel(lastEvents, usageDuration);
+    const models = aggregateByModel(lastEvents, lastDailySpend ?? [], usageDuration);
     const label = { "1d": "24 hours", "7d": "7 days", "30d": "30 days" }[usageDuration];
     md += `<hr>\n\n`;
     md += `**Usage by Model** *(${label})* &nbsp;[Change](command:cursor-usage.openDurationSetting)\n\n`;
-    if (models.length > 0) {
-      md += `| Model | Tokens | Requests |\n`;
-      md += `|:------|-------:|---------:|\n`;
-      for (const m of models) {
-        md += `| ${m.model} | ${formatTokens(m.totalTokens)} | ${m.requests} |\n`;
-      }
-      md += `\n`;
-    } else {
-      md += `*No usage in this period*\n\n`;
-    }
+    const modelTableWidth = barW * 2 + 2;
+    md += buildModelBreakdownTableMarkdown(models, modelTableWidth);
   }
 
   if (data.resetsAt) {
@@ -236,15 +252,22 @@ async function updateUsage() {
   await new Promise((r) => setTimeout(r, 0));
 
   try {
-    const [dataResult, eventsResult] = await Promise.allSettled([
+    const [dataResult, eventsResult, spendResult] = await Promise.allSettled([
       fetchUsageData(),
       fetchUsageEvents(),
+      fetchDailySpendByCategory(),
     ]);
 
     if (eventsResult.status === "fulfilled") {
       lastEvents = eventsResult.value;
     } else if (eventsResult.status === "rejected") {
       log(`Usage events fetch failed: ${eventsResult.reason}`);
+    }
+
+    if (spendResult.status === "fulfilled") {
+      lastDailySpend = spendResult.value;
+    } else if (spendResult.status === "rejected") {
+      log(`Daily spend fetch failed: ${spendResult.reason}`);
     }
 
     const data = dataResult.status === "fulfilled" ? dataResult.value : null;

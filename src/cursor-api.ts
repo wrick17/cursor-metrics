@@ -21,6 +21,13 @@ export type UsageEvent = {
   requests: number;
 };
 
+export type DailySpendRow = {
+  day: number;
+  category: string;
+  spendCents: number;
+  totalTokens: number;
+};
+
 type Logger = (msg: string) => void;
 
 let log: Logger = () => {};
@@ -414,6 +421,128 @@ async function fetchSoloUsage(
 
   log(`Result: ${result.includedRequests.used}/${result.includedRequests.limit} reqs`);
   return result;
+}
+
+function parseDailySpendRow(row: unknown): DailySpendRow | null {
+  const data = asRecord(row);
+  if (!data) return null;
+
+  const day = toNumber(data.day);
+  const category = typeof data.category === "string" ? data.category : null;
+  const spendCents = toNumber(data.spendCents);
+  const totalTokens = toNumber(data.totalTokens);
+
+  if (day === null || !category || spendCents === null || totalTokens === null) {
+    return null;
+  }
+
+  return {
+    day,
+    category,
+    spendCents,
+    totalTokens,
+  };
+}
+
+async function resolveDashboardUserId(
+  auth: AuthInfo,
+  headers: ReturnType<typeof cursorHeaders>,
+  setup: SetupCache,
+): Promise<number | null> {
+  const directUserId = toNumber(auth.userId);
+  if (directUserId !== null) {
+    return directUserId;
+  }
+
+  if (!setup.isTeamMember || !setup.teamId) {
+    return null;
+  }
+
+  const res = await fetch("https://cursor.com/api/dashboard/get-team-spend", {
+    method: "POST",
+    headers,
+    body: JSON.stringify({ teamId: setup.teamId }),
+  });
+  if (!res.ok) {
+    log(`get-team-spend failed while resolving dashboard user id: ${res.status}`);
+    return null;
+  }
+
+  const data = await res.json();
+  const members: unknown[] = Array.isArray(data.teamMemberSpend) ? data.teamMemberSpend : [];
+  for (const member of members) {
+    const record = asRecord(member);
+    if (!record) continue;
+
+    const memberEmail = typeof record.email === "string" ? record.email : null;
+    const memberAuthId = typeof record.authId === "string" ? record.authId : null;
+    const memberUserId = toNumber(record.userId);
+    if (memberUserId === null) continue;
+
+    if (
+      (auth.email && memberEmail === auth.email) ||
+      (memberAuthId && memberAuthId === auth.userId) ||
+      String(record.userId) === auth.userId
+    ) {
+      return memberUserId;
+    }
+  }
+
+  log(`Could not resolve dashboard user id from team spend (email=${auth.email}, userId=${auth.userId})`);
+  return null;
+}
+
+export async function fetchDailySpendByCategory(): Promise<DailySpendRow[]> {
+  log("--- Fetching daily spend by category ---");
+
+  const auth = getCursorToken();
+  if (!auth) {
+    log("Failed to get auth token for daily spend");
+    return [];
+  }
+
+  const headers = cursorHeaders(auth.sessionToken);
+  const setup = await ensureSetup(auth.userId, headers);
+  if (!setup?.isTeamMember || !setup.teamId) {
+    log("Skipping daily spend fetch: team setup unavailable");
+    return [];
+  }
+
+  const dashboardUserId = await resolveDashboardUserId(auth, headers, setup);
+  if (dashboardUserId === null) {
+    log("Skipping daily spend fetch: dashboard user id unavailable");
+    return [];
+  }
+
+  const periodEndMs = Date.now();
+  const periodStartMs = periodEndMs - 30 * 86_400_000;
+  const res = await fetch("https://cursor.com/api/dashboard/get-daily-spend-by-category", {
+    method: "POST",
+    headers,
+    body: JSON.stringify({
+      teamId: setup.teamId,
+      userId: dashboardUserId,
+      periodStartMs,
+      periodEndMs,
+      groupBy: 1,
+      spendType: 1,
+    }),
+  });
+
+  if (!res.ok) {
+    log(`get-daily-spend-by-category failed: ${res.status}`);
+    return [];
+  }
+
+  const data = await res.json();
+  const rows: unknown[] = Array.isArray(data.dailySpend) ? data.dailySpend : [];
+  const parsedRows: DailySpendRow[] = [];
+  for (const row of rows) {
+    const parsed = parseDailySpendRow(row);
+    if (parsed) parsedRows.push(parsed);
+  }
+  log(`Fetched ${parsedRows.length} daily spend rows`);
+  return parsedRows;
 }
 
 function parseEventKind(kind: string): string {
