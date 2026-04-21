@@ -2,7 +2,12 @@
 
 All notable changes to this project are documented in this file.
 
-## [Unreleased]
+## [0.4.9] - 2026-04-21
+
+### Changed
+- Simplified and decluttered the README for extension marketplace readability.
+- Added a screenshot preview near the top of the README so the extension page shows the UI tooltip.
+- Removed publishing and release-process documentation from the README.
 
 ## [0.4.8] - 2026-04-20
 

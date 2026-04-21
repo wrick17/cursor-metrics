@@ -2,7 +2,7 @@
   "name": "cursor-usage",
   "displayName": "Cursor Usage",
   "description": "Shows your Cursor IDE usage (included requests and on-demand spend) in the status bar",
-  "version": "0.4.8",
+  "version": "0.4.9",
   "publisher": "wrick17",
   "license": "MIT",
   "repository": {
