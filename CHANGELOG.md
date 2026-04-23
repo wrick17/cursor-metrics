@@ -2,6 +2,16 @@
 
 All notable changes to this project are documented in this file.
 
+## [0.4.10] - 2026-04-23
+
+### Added
+- Added `cursorUsage.modelBreakdownSortBy` to choose the usage-by-model table sort column (`Model`, `Requests`, `Tokens`, `Spend`).
+- Added `cursorUsage.modelBreakdownSortOrder` to choose ascending or descending table order.
+
+### Changed
+- Updated usage-by-model aggregation to apply configured column/direction sorting, defaulting to `Tokens` descending.
+- Added test coverage for new sort settings and ordering behavior.
+
 ## [0.4.9] - 2026-04-21
 
 ### Changed

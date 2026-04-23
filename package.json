@@ -2,7 +2,7 @@
   "name": "cursor-usage",
   "displayName": "Cursor Usage",
   "description": "Shows your Cursor IDE usage (included requests and on-demand spend) in the status bar",
-  "version": "0.4.9",
+  "version": "0.4.10",
   "publisher": "wrick17",
   "license": "MIT",
   "repository": {
@@ -80,6 +80,36 @@
             "Current billing cycle (falls back to Last 30 Days when reset metadata is unavailable)"
           ],
           "description": "Time range for the usage-by-model breakdown in the tooltip. Current Billing Cycle falls back to Last 30 Days when reset metadata is unavailable."
+        },
+        "cursorUsage.modelBreakdownSortBy": {
+          "type": "string",
+          "default": "tokens",
+          "enum": [
+            "model",
+            "requests",
+            "tokens",
+            "spend"
+          ],
+          "enumItemLabels": [
+            "Model",
+            "Requests",
+            "Tokens",
+            "Spend"
+          ],
+          "description": "Sort column for the usage-by-model table."
+        },
+        "cursorUsage.modelBreakdownSortOrder": {
+          "type": "string",
+          "default": "desc",
+          "enum": [
+            "asc",
+            "desc"
+          ],
+          "enumItemLabels": [
+            "Ascending",
+            "Descending"
+          ],
+          "description": "Sort direction for the usage-by-model table."
         }
       }
     }

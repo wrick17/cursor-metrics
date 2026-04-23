@@ -42,6 +42,28 @@ describe("model breakdown aggregation", () => {
     ]);
   });
 
+  it("supports sorting by selected column and direction", () => {
+    const events: UsageEvent[] = [
+      { timestamp: now - 1 * dayMs, model: "zeta", kind: "On-Demand", totalTokens: 100, requests: 3 },
+      { timestamp: now - 1 * dayMs, model: "alpha", kind: "On-Demand", totalTokens: 200, requests: 1 },
+      { timestamp: now - 1 * dayMs, model: "beta", kind: "On-Demand", totalTokens: 150, requests: 2 },
+    ];
+    const spendRows: DailySpendRow[] = [
+      { day: now - 1 * dayMs, category: "zeta", spendCents: 100, totalTokens: 100 },
+      { day: now - 1 * dayMs, category: "alpha", spendCents: 25, totalTokens: 200 },
+      { day: now - 1 * dayMs, category: "beta", spendCents: 50, totalTokens: 150 },
+    ];
+
+    const modelAsc = aggregateByModel(events, spendRows, "7d", null, now, "model", "asc");
+    expect(modelAsc.map((row) => row.model)).toEqual(["alpha", "beta", "zeta"]);
+
+    const requestsDesc = aggregateByModel(events, spendRows, "7d", null, now, "requests", "desc");
+    expect(requestsDesc.map((row) => row.model)).toEqual(["zeta", "beta", "alpha"]);
+
+    const spendAsc = aggregateByModel(events, spendRows, "7d", null, now, "spend", "asc");
+    expect(spendAsc.map((row) => row.model)).toEqual(["alpha", "beta", "zeta"]);
+  });
+
   it("applies duration cutoffs for 1d, 7d, and 30d", () => {
     const events: UsageEvent[] = [
       { timestamp: now - 6 * dayMs, model: "gpt-5.3-codex", kind: "Included", totalTokens: 100, requests: 1 },

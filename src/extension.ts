@@ -11,7 +11,13 @@ import {
 import {
   resolveConfiguredUsageDuration,
 } from "./duration-options";
-import { aggregateByModel, formatDollarsFromCents, type UsageDuration } from "./model-breakdown";
+import {
+  aggregateByModel,
+  formatDollarsFromCents,
+  type ModelBreakdownSortBy,
+  type SortOrder,
+  type UsageDuration,
+} from "./model-breakdown";
 import {
   buildUsageByModelHeadingMarkdown,
   buildUsageOverviewMarkdown,
@@ -37,10 +43,14 @@ function log(msg: string) {
 
 function getConfig() {
   const cfg = vscode.workspace.getConfiguration("cursorUsage");
+  const modelBreakdownSortBy = cfg.get<ModelBreakdownSortBy>("modelBreakdownSortBy", "tokens");
+  const modelBreakdownSortOrder = cfg.get<SortOrder>("modelBreakdownSortOrder", "desc");
   return {
     pollInterval: cfg.get<number>("pollInterval", 5),
     minimalMode: cfg.get<boolean>("minimalMode", false),
     usageDuration: cfg.get<string>("usageDuration", "billingCycle"),
+    modelBreakdownSortBy,
+    modelBreakdownSortOrder,
   };
 }
 
@@ -230,8 +240,17 @@ function updateStatusBar(data: UsagePayload) {
   md += `\n`;
 
   if (lastEvents && lastEvents.length > 0) {
-    const usageDuration: UsageDuration = resolveConfiguredUsageDuration(getConfig().usageDuration, Boolean(data.resetsAt));
-    const models = aggregateByModel(lastEvents, lastDailySpend ?? [], usageDuration, data.resetsAt);
+    const config = getConfig();
+    const usageDuration: UsageDuration = resolveConfiguredUsageDuration(config.usageDuration, Boolean(data.resetsAt));
+    const models = aggregateByModel(
+      lastEvents,
+      lastDailySpend ?? [],
+      usageDuration,
+      data.resetsAt,
+      Date.now(),
+      config.modelBreakdownSortBy,
+      config.modelBreakdownSortOrder,
+    );
     md += `<hr>\n\n`;
     md += buildUsageByModelHeadingMarkdown(usageDuration);
     const modelTableWidth = barW * 2 + 2;
@@ -376,7 +395,9 @@ export function activate(context: vscode.ExtensionContext) {
     if (
       lastData
       && (e.affectsConfiguration("cursorUsage.minimalMode")
-        || e.affectsConfiguration("cursorUsage.usageDuration"))
+        || e.affectsConfiguration("cursorUsage.usageDuration")
+        || e.affectsConfiguration("cursorUsage.modelBreakdownSortBy")
+        || e.affectsConfiguration("cursorUsage.modelBreakdownSortOrder"))
     ) {
       updateStatusBar(lastData);
     }

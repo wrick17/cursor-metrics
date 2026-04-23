@@ -9,6 +9,44 @@ export type ModelAggregate = {
   spendCents: number;
 };
 
+export type ModelBreakdownSortBy = "model" | "requests" | "tokens" | "spend";
+export type SortOrder = "asc" | "desc";
+
+function compareStrings(a: string, b: string): number {
+  return a.localeCompare(b, "en-US");
+}
+
+function compareNumbers(a: number, b: number): number {
+  return a - b;
+}
+
+function sortModelAggregates(
+  rows: ModelAggregate[],
+  sortBy: ModelBreakdownSortBy,
+  sortOrder: SortOrder,
+): ModelAggregate[] {
+  const direction = sortOrder === "asc" ? 1 : -1;
+  const sorted = [...rows].sort((a, b) => {
+    if (sortBy === "model") {
+      const byName = compareStrings(a.model, b.model);
+      return byName === 0 ? 0 : byName * direction;
+    }
+
+    const metricDiff = sortBy === "requests"
+      ? compareNumbers(a.requests, b.requests)
+      : sortBy === "spend"
+        ? compareNumbers(a.spendCents, b.spendCents)
+        : compareNumbers(a.totalTokens, b.totalTokens);
+    if (metricDiff !== 0) {
+      return metricDiff * direction;
+    }
+
+    return compareStrings(a.model, b.model);
+  });
+
+  return sorted;
+}
+
 function getBillingCycleStart(resetAtIso: string, now = Date.now()): number {
   const resetAt = new Date(resetAtIso);
   if (Number.isNaN(resetAt.getTime())) {
@@ -54,6 +92,8 @@ export function aggregateByModel(
   duration: UsageDuration,
   resetAtIso: string | null,
   now = Date.now(),
+  sortBy: ModelBreakdownSortBy = "tokens",
+  sortOrder: SortOrder = "desc",
 ): ModelAggregate[] {
   const cutoff = getDurationCutoff(duration, resetAtIso, now);
   const spendByCategory = aggregateSpendByCategory(spendRows, duration, resetAtIso, now);
@@ -67,14 +107,13 @@ export function aggregateByModel(
     modelMap.set(event.model, entry);
   }
 
-  return [...modelMap.entries()]
-    .map(([model, totals]) => ({
-      model,
-      totalTokens: totals.totalTokens,
-      requests: totals.requests,
-      spendCents: spendByCategory.get(model) ?? 0,
-    }))
-    .sort((a, b) => b.totalTokens - a.totalTokens);
+  const rows = [...modelMap.entries()].map(([model, totals]) => ({
+    model,
+    totalTokens: totals.totalTokens,
+    requests: totals.requests,
+    spendCents: spendByCategory.get(model) ?? 0,
+  }));
+  return sortModelAggregates(rows, sortBy, sortOrder);
 }
 
 export function formatDollarsFromCents(cents: number): string {

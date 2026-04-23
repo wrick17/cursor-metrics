@@ -19,4 +19,17 @@ describe("package configuration", () => {
     expect(packageJson.scripts["package:vsm"]).toContain("cursor-usage-auto");
     expect(packageJson.scripts["publish:vsm"]).toContain("cursor-usage-auto");
   });
+
+  it("exposes model table sorting settings with token-desc defaults", () => {
+    const sortByConfig = packageJson.contributes.configuration.properties["cursorUsage.modelBreakdownSortBy"];
+    const sortOrderConfig = packageJson.contributes.configuration.properties["cursorUsage.modelBreakdownSortOrder"];
+
+    expect(sortByConfig.default).toBe("tokens");
+    expect(sortByConfig.enum).toEqual(["model", "requests", "tokens", "spend"]);
+    expect(sortByConfig.enumItemLabels).toEqual(["Model", "Requests", "Tokens", "Spend"]);
+
+    expect(sortOrderConfig.default).toBe("desc");
+    expect(sortOrderConfig.enum).toEqual(["asc", "desc"]);
+    expect(sortOrderConfig.enumItemLabels).toEqual(["Ascending", "Descending"]);
+  });
 });
