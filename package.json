@@ -2,7 +2,7 @@
   "name": "cursor-usage",
   "displayName": "Cursor Usage",
   "description": "Shows your Cursor IDE usage (included requests and on-demand spend) in the status bar",
-  "version": "0.4.10",
+  "version": "0.4.11",
   "publisher": "wrick17",
   "license": "MIT",
   "repository": {
@@ -110,6 +110,11 @@
             "Descending"
           ],
           "description": "Sort direction for the usage-by-model table."
+        },
+        "cursorUsage.excludeZeroTokenModels": {
+          "type": "boolean",
+          "default": false,
+          "description": "Hide rows in the usage-by-model table where token usage is zero."
         }
       }
     }

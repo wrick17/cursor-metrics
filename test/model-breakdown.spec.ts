@@ -3,6 +3,7 @@ import type { DailySpendRow, UsageEvent } from "../src/cursor-api";
 import {
   aggregateByModel,
   aggregateSpendByCategory,
+  filterZeroTokenModels,
   formatDollarsFromCents,
   getDurationCutoff,
 } from "../src/model-breakdown";
@@ -144,5 +145,17 @@ describe("model breakdown formatting", () => {
     expect(getDurationCutoff("7d", null, now)).toBe(now - 7 * dayMs);
     expect(getDurationCutoff("30d", null, now)).toBe(now - 30 * dayMs);
     expect(getDurationCutoff("billingCycle", "2026-05-01T00:00:00.000Z", now)).toBe(Date.UTC(2026, 3, 1, 0, 0, 0));
+  });
+
+  it("optionally filters out models with zero tokens", () => {
+    const rows = [
+      { model: "gpt-5.4-high", totalTokens: 10_000, requests: 10, spendCents: 500 },
+      { model: "gpt-5.3-codex-spark-preview-high", totalTokens: 0, requests: 2, spendCents: 0 },
+    ];
+
+    expect(filterZeroTokenModels(rows, false)).toEqual(rows);
+    expect(filterZeroTokenModels(rows, true)).toEqual([
+      { model: "gpt-5.4-high", totalTokens: 10_000, requests: 10, spendCents: 500 },
+    ]);
   });
 });

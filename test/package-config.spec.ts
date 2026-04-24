@@ -32,4 +32,11 @@ describe("package configuration", () => {
     expect(sortOrderConfig.enum).toEqual(["asc", "desc"]);
     expect(sortOrderConfig.enumItemLabels).toEqual(["Ascending", "Descending"]);
   });
+
+  it("exposes a setting to hide zero-token models in the breakdown", () => {
+    const hideZeroTokenConfig = packageJson.contributes.configuration.properties["cursorUsage.excludeZeroTokenModels"];
+
+    expect(hideZeroTokenConfig.default).toBe(false);
+    expect(hideZeroTokenConfig.type).toBe("boolean");
+  });
 });

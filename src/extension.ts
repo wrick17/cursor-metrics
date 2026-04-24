@@ -13,6 +13,7 @@ import {
 } from "./duration-options";
 import {
   aggregateByModel,
+  filterZeroTokenModels,
   formatDollarsFromCents,
   type ModelBreakdownSortBy,
   type SortOrder,
@@ -51,6 +52,7 @@ function getConfig() {
     usageDuration: cfg.get<string>("usageDuration", "billingCycle"),
     modelBreakdownSortBy,
     modelBreakdownSortOrder,
+    excludeZeroTokenModels: cfg.get<boolean>("excludeZeroTokenModels", false),
   };
 }
 
@@ -251,10 +253,11 @@ function updateStatusBar(data: UsagePayload) {
       config.modelBreakdownSortBy,
       config.modelBreakdownSortOrder,
     );
+    const filteredModels = filterZeroTokenModels(models, config.excludeZeroTokenModels);
     md += `<hr>\n\n`;
     md += buildUsageByModelHeadingMarkdown(usageDuration);
     const modelTableWidth = barW * 2 + 2;
-    md += buildModelBreakdownTableMarkdown(models, modelTableWidth);
+    md += buildModelBreakdownTableMarkdown(filteredModels, modelTableWidth);
   }
 
   if (data.resetsAt) {
@@ -397,7 +400,8 @@ export function activate(context: vscode.ExtensionContext) {
       && (e.affectsConfiguration("cursorUsage.minimalMode")
         || e.affectsConfiguration("cursorUsage.usageDuration")
         || e.affectsConfiguration("cursorUsage.modelBreakdownSortBy")
-        || e.affectsConfiguration("cursorUsage.modelBreakdownSortOrder"))
+        || e.affectsConfiguration("cursorUsage.modelBreakdownSortOrder")
+        || e.affectsConfiguration("cursorUsage.excludeZeroTokenModels"))
     ) {
       updateStatusBar(lastData);
     }

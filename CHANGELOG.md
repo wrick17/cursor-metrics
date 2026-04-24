@@ -2,6 +2,15 @@
 
 All notable changes to this project are documented in this file.
 
+## [0.4.11] - 2026-04-23
+
+### Added
+- Added `cursorUsage.excludeZeroTokenModels` to hide usage-by-model rows where token usage is zero.
+
+### Changed
+- Updated tooltip rendering to apply zero-token model filtering when the setting is enabled.
+- Added tests covering filter behavior and configuration exposure.
+
 ## [0.4.10] - 2026-04-23
 
 ### Added

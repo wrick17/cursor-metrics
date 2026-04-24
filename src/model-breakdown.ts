@@ -120,3 +120,11 @@ export function formatDollarsFromCents(cents: number): string {
   const dollars = cents / 100;
   return `$${dollars.toFixed(2)}`;
 }
+
+export function filterZeroTokenModels(rows: ModelAggregate[], excludeZeroTokenModels: boolean): ModelAggregate[] {
+  if (!excludeZeroTokenModels) {
+    return rows;
+  }
+
+  return rows.filter((row) => row.totalTokens > 0);
+}
