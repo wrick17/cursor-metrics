@@ -2,7 +2,7 @@
   "name": "cursor-usage",
   "displayName": "Cursor Usage",
   "description": "Shows your Cursor IDE usage (included requests and on-demand spend) in the status bar",
-  "version": "0.4.11",
+  "version": "0.5.0",
   "publisher": "wrick17",
   "license": "MIT",
   "repository": {
@@ -29,6 +29,10 @@
       {
         "command": "cursor-usage.refresh",
         "title": "Cursor Usage: Refresh"
+      },
+      {
+        "command": "cursor-usage.openDashboard",
+        "title": "Cursor Usage: Open Dashboard"
       }
     ],
     "configuration": {

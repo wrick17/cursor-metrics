@@ -4,13 +4,17 @@ import {
   fetchDailySpendByCategory,
   fetchUsageData,
   fetchUsageEvents,
+  isTeamMemberCached,
   type DailySpendRow,
   type UsagePayload,
   type UsageEvent,
 } from "./cursor-api";
+import { DashboardPanel, OPEN_DASHBOARD_COMMAND } from "./dashboard-panel";
+import { buildDashboardState, type DashboardState } from "./dashboard-state";
 import {
   resolveConfiguredUsageDuration,
 } from "./duration-options";
+import { formatTokens } from "./format";
 import {
   aggregateByModel,
   filterZeroTokenModels,
@@ -136,13 +140,6 @@ function summaryDividerHtml(height = 52): string {
   return `<img src="data:image/svg+xml;base64,${encoded}" width="2" height="${height}" />`;
 }
 
-function formatTokens(n: number): string {
-  if (n >= 1_000_000_000) return `${(n / 1_000_000_000).toFixed(1)}B`;
-  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
-  if (n >= 1_000) return `${(n / 1_000).toFixed(1)}K`;
-  return String(n);
-}
-
 type OnDemandUsage = UsagePayload["onDemand"];
 
 function buildModelBreakdownTableMarkdown(
@@ -167,7 +164,7 @@ function buildModelBreakdownTableMarkdown(
     lines.push(
       `  <tr>` +
       `<td align="left">${row.model}</td>` +
-      `<td align="right">${row.requests}</td>` +
+      `<td align="right">${Math.round(row.requests)}</td>` +
       `<td align="right">${formatTokens(row.totalTokens)}</td>` +
       `<td align="right">${formatDollarsFromCents(row.spendCents)}</td>` +
       `</tr>`,
@@ -266,7 +263,7 @@ function updateStatusBar(data: UsagePayload) {
   }
 
   md += `<hr>\n\n`;
-  md += `[Open Dashboard](https://cursor.com/dashboard) | [Refresh](command:cursor-usage.refresh)`;
+  md += `[Open Dashboard](command:${OPEN_DASHBOARD_COMMAND}) | [Refresh](command:cursor-usage.refresh)`;
 
   tooltip.appendMarkdown(md);
   statusBarItem.tooltip = tooltip;
@@ -316,6 +313,8 @@ async function updateUsage() {
         statusBarItem.text = statusBarItem.text.replace("$(loading~spin)", "$(pulse)");
       }
     }
+
+    DashboardPanel.currentPanel?.postState(getDashboardState());
   } catch (err: any) {
     const msg = err?.message ?? String(err);
     log(`Error in updateUsage: ${msg}`);
@@ -342,7 +341,7 @@ async function showDetails() {
       ...items,
     );
     if (action === "Refresh") await updateUsage();
-    else if (action === "Open Dashboard") vscode.env.openExternal(vscode.Uri.parse("https://cursor.com/dashboard"));
+    else if (action === "Open Dashboard") await vscode.commands.executeCommand(OPEN_DASHBOARD_COMMAND);
     else if (action === "Show Logs") outputChannel.show();
     return;
   }
@@ -369,7 +368,7 @@ async function showDetails() {
   );
 
   if (action === "Open Dashboard") {
-    vscode.env.openExternal(vscode.Uri.parse("https://cursor.com/dashboard"));
+    await vscode.commands.executeCommand(OPEN_DASHBOARD_COMMAND);
   } else if (action === "Refresh") {
     await updateUsage();
   }
@@ -379,6 +378,17 @@ async function openDurationSetting() {
   await vscode.commands.executeCommand("workbench.action.openSettings", "cursorUsage.usageDuration");
 }
 
+function getDashboardState(): DashboardState {
+  return buildDashboardState(
+    lastData,
+    lastEvents ?? [],
+    lastDailySpend ?? [],
+    isTeamMemberCached(),
+    lastError,
+    Date.now(),
+  );
+}
+
 export function activate(context: vscode.ExtensionContext) {
   outputChannel = vscode.window.createOutputChannel("Cursor Usage");
   log("Extension activating...");
@@ -386,13 +396,17 @@ export function activate(context: vscode.ExtensionContext) {
   configure({ logger: log });
 
   statusBarItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Right, 100);
-  statusBarItem.command = "cursor-usage.showDetails";
+  statusBarItem.command = OPEN_DASHBOARD_COMMAND;
   statusBarItem.text = "$(loading~spin) Usage";
   statusBarItem.show();
 
   const showDetailsCmd = vscode.commands.registerCommand("cursor-usage.showDetails", showDetails);
   const refreshCmd = vscode.commands.registerCommand("cursor-usage.refresh", updateUsage);
   const openDurationSettingCmd = vscode.commands.registerCommand(OPEN_DURATION_SETTING_COMMAND, openDurationSetting);
+  const openDashboardCmd = vscode.commands.registerCommand(OPEN_DASHBOARD_COMMAND, () => {
+    DashboardPanel.createOrShow(context, updateUsage, getDashboardState);
+    DashboardPanel.currentPanel?.postState(getDashboardState());
+  });
 
   const configListener = vscode.workspace.onDidChangeConfiguration((e) => {
     if (
@@ -420,7 +434,7 @@ export function activate(context: vscode.ExtensionContext) {
   });
 
   context.subscriptions.push(
-    statusBarItem, showDetailsCmd, refreshCmd, openDurationSettingCmd,
+    statusBarItem, showDetailsCmd, refreshCmd, openDurationSettingCmd, openDashboardCmd,
     configListener, docChangeListener, focusListener, themeListener,
     outputChannel,
   );

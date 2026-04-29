@@ -2,6 +2,22 @@
 
 All notable changes to this project are documented in this file.
 
+## [0.5.0] - 2026-04-29
+
+### Added
+- New `cursor-usage.openDashboard` command opens a full Cursor Usage dashboard in a VSCode editor tab.
+- Dashboard renders Included-Request and On-Demand summary cards, a stacked bar chart of per-day usage, and a sortable Events table with Export CSV.
+- Range tabs (Last 24 hours / Last 7 days / Last 30 days / Current Billing Cycle) match the `cursorUsage.usageDuration` setting labels.
+- Chart filters for Usage (All / Included / On-Demand) and Metric (Spend / Tokens / Requests); per-event spend now derives from `chargedCents` so Spend works for solo and team accounts.
+- Events table shows `MAX` mode badges and a colored model dot that matches the chart palette.
+
+### Changed
+- Status-bar click now opens the new dashboard instead of the inline message dialog.
+- Tooltip "Open Dashboard" link and the no-data warning's "Open Dashboard" action now route to the new in-VSCode dashboard.
+- Dashboard polling reuses the existing `cursorUsage.pollInterval` cadence; the dashboard auto-updates whenever the host fetches new data.
+- Usage events now parse `requestsCosts` (fractional) and string timestamps from the Cursor API; popup table rounds requests to integers.
+- Theme refresh: shadcn-style dark surface, soft pastel chart palette, rounded top corners on the topmost stack segment.
+
 ## [0.4.11] - 2026-04-23
 
 ### Added

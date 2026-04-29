@@ -19,6 +19,8 @@ export type UsageEvent = {
   kind: string;
   totalTokens: number;
   requests: number;
+  spendCents: number;
+  maxMode: boolean;
 };
 
 export type DailySpendRow = {
@@ -247,6 +249,10 @@ type SetupCache = {
 };
 
 let cachedSetup: SetupCache | null = null;
+
+export function isTeamMemberCached(): boolean {
+  return cachedSetup?.isTeamMember ?? false;
+}
 
 async function ensureSetup(
   userId: string,
@@ -548,6 +554,7 @@ export async function fetchDailySpendByCategory(): Promise<DailySpendRow[]> {
 function parseEventKind(kind: string): string {
   if (kind === "USAGE_EVENT_KIND_USAGE_BASED") return "On-Demand";
   if (kind === "USAGE_EVENT_KIND_ERRORED_NOT_CHARGED") return "Errored";
+  if (kind === "USAGE_EVENT_KIND_ABORTED_NOT_CHARGED") return "Aborted";
   return "Included";
 }
 
@@ -598,17 +605,22 @@ export async function fetchUsageEvents(): Promise<UsageEvent[]> {
     for (const e of events) {
       const tok = e.tokenUsage ?? {};
       const totalTokens =
-        (tok.inputTokens ?? 0) +
-        (tok.outputTokens ?? 0) +
-        (tok.cacheWriteTokens ?? 0) +
-        (tok.cacheReadTokens ?? 0);
+        (toNumber(tok.inputTokens) ?? 0) +
+        (toNumber(tok.outputTokens) ?? 0) +
+        (toNumber(tok.cacheWriteTokens) ?? 0) +
+        (toNumber(tok.cacheReadTokens) ?? 0);
+
+      const requests = toNumber(e.requestsCosts) ?? toNumber(e.numRequests) ?? 1;
+      const spendCents = toNumber(e.chargedCents) ?? 0;
 
       allEvents.push({
-        timestamp: e.timestamp ?? 0,
+        timestamp: toNumber(e.timestamp) ?? 0,
         model: e.model ?? "unknown",
         kind: parseEventKind(e.kind ?? ""),
         totalTokens,
-        requests: e.numRequests ?? 1,
+        requests,
+        spendCents,
+        maxMode: Boolean(e.maxMode),
       });
     }
 
