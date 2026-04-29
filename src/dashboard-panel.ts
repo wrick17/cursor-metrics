@@ -166,6 +166,26 @@ export class DashboardPanel {
     <p id="chart-note" class="muted small"></p>
   </section>
 
+  <section class="model-breakdown-section">
+    <div class="events-header">
+      <h2>Usage by Model</h2>
+      <span class="muted small" id="breakdown-range-label"></span>
+    </div>
+    <div class="table-scroll">
+      <table id="breakdown-table">
+        <thead>
+          <tr>
+            <th data-sort="model" class="sortable">Model</th>
+            <th data-sort="requests" class="sortable num">Requests</th>
+            <th data-sort="totalTokens" class="sortable num">Tokens</th>
+            <th data-sort="spendCents" class="sortable num">Spend</th>
+          </tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+    </div>
+  </section>
+
   <section class="events-section">
     <div class="events-header">
       <h2>Events</h2>
@@ -180,6 +200,7 @@ export class DashboardPanel {
             <th data-sort="model" class="sortable">Model</th>
             <th data-sort="totalTokens" class="sortable num">Tokens</th>
             <th data-sort="requests" class="sortable num">Requests</th>
+            <th data-sort="spendCents" class="sortable num">Spend</th>
           </tr>
         </thead>
         <tbody></tbody>

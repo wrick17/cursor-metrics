@@ -35,7 +35,8 @@ body {
   font-size: 13px;
   color: var(--fg);
   background: var(--bg);
-  margin: 0;
+  margin: 0 auto;
+  max-width: 1000px;
   padding: 16px 20px;
   line-height: 1.4;
   -webkit-font-smoothing: antialiased;
@@ -186,7 +187,7 @@ label select { color: var(--fg); }
   color: var(--fg);
 }
 
-.chart-section, .events-section {
+.chart-section, .events-section, .model-breakdown-section {
   background: var(--card);
   border: 1px solid var(--border);
   border-radius: var(--radius);
@@ -240,7 +241,9 @@ th.sortable:hover { color: var(--fg); }
 th.sorted-asc::after { content: " ↑"; font-size: 10px; }
 th.sorted-desc::after { content: " ↓"; font-size: 10px; }
 td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
-tbody tr:hover { background: var(--card-2); }
+/* Row hover: slightly brighten the tinted background using a multiply-style overlay. */
+tbody tr { transition: filter 80ms ease; }
+tbody tr:hover { filter: brightness(1.4); }
 
 .kind-badge {
   display: inline-block;
@@ -272,17 +275,22 @@ tbody tr:hover { background: var(--card-2); }
 
 .max-badge {
   display: inline-block;
-  padding: 0 5px;
+  padding: 1px 6px;
   margin-left: 6px;
-  border-radius: 3px;
-  font-size: 9px;
-  font-weight: 600;
+  border-radius: 4px;
+  font-size: 10px;
+  font-weight: 500;
   letter-spacing: 0.04em;
   background: var(--card-2);
-  color: var(--muted);
   border: 1px solid var(--border);
   vertical-align: middle;
-  line-height: 1.6;
+  line-height: 1.4;
+  /* Gradient text via background-clip */
+  background-image: linear-gradient(90deg, #b48cd8 0%, #d99ac4 55%, #e6a89a 100%), linear-gradient(0deg, var(--card-2), var(--card-2));
+  -webkit-background-clip: text, padding-box;
+  background-clip: text, padding-box;
+  -webkit-text-fill-color: transparent;
+  color: transparent;
 }
 
 .pagination {
@@ -295,6 +303,63 @@ tbody tr:hover { background: var(--card-2); }
   color: var(--muted);
 }
 .pagination button { padding: 2px 8px; }
+
+.chart-tooltip {
+  position: absolute;
+  pointer-events: none;
+  z-index: 1000;
+  opacity: 0;
+  transition: opacity 80ms ease;
+  background: rgba(20, 20, 20, 0.96);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: var(--radius-sm);
+  padding: 8px 10px;
+  color: rgba(255, 255, 255, 0.92);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+  font-size: 11px;
+  min-width: 180px;
+}
+.chart-tooltip .t-title {
+  font-size: 11px;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.95);
+  margin-bottom: 6px;
+}
+.chart-tooltip .t-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 11px;
+}
+.chart-tooltip .t-table th {
+  font-weight: 500;
+  color: rgba(255, 255, 255, 0.5);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  padding: 3px 8px 4px 0;
+  text-align: left;
+  white-space: nowrap;
+}
+.chart-tooltip .t-table th.num,
+.chart-tooltip .t-table td.num {
+  text-align: right;
+  padding-right: 0;
+  padding-left: 12px;
+  font-variant-numeric: tabular-nums;
+}
+.chart-tooltip .t-table td {
+  padding: 3px 8px 3px 0;
+  color: rgba(255, 255, 255, 0.9);
+  white-space: nowrap;
+  border-bottom: none;
+}
+.chart-tooltip .t-table tbody tr:last-child td { padding-bottom: 0; }
+.chart-tooltip .t-dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  margin-right: 6px;
+  vertical-align: middle;
+}
 
 .error-banner {
   background: rgba(248, 113, 113, 0.08);

@@ -2,6 +2,26 @@
 
 All notable changes to this project are documented in this file.
 
+## [0.5.7] - 2026-04-29
+
+### Added
+- Dashboard now has a `Usage by Model` section between the chart and the events table, with sortable Model / Requests / Tokens / Spend columns. Each row reuses the chart's color tinting so it visually maps to the chart series.
+- Chart tooltip is now a real HTML table with a header row, a colored model dot, and a per-row Spend column when viewing Tokens or Requests.
+
+### Changed
+- Constrained dashboard content to a 1000px max width for readability on wide monitors.
+- Centered the chart legend.
+- When the `Current Billing Cycle` range is selected, the chart's x-axis now extends through the last day of the cycle so the full span is visible even before later days have data.
+- Y-axis tick labels drop the trailing `.0` (`60M` instead of `60.0M`).
+- Events table rows are tinted with the model color and gain a 3px left accent border, replacing the previous inline dot.
+- Refined the `MAX` badge to match Cursor's gradient text treatment (purple → pink → peach).
+
+## [0.5.2] - 2026-04-29
+
+### Added
+- Dashboard events table now shows a per-event Spend column (sortable, in USD).
+- Chart tooltip now appends each model's spend on that day alongside the selected metric value when viewing Tokens or Requests.
+
 ## [0.5.1] - 2026-04-29
 
 ### Fixed

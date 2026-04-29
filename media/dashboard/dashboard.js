@@ -13,6 +13,9 @@
     chartNote: document.getElementById("chart-note"),
     tableBody: document.querySelector("#events-table tbody"),
     tableHead: document.querySelector("#events-table thead"),
+    breakdownBody: document.querySelector("#breakdown-table tbody"),
+    breakdownHead: document.querySelector("#breakdown-table thead"),
+    breakdownRangeLabel: document.getElementById("breakdown-range-label"),
     pagination: document.getElementById("pagination"),
     refreshBtn: document.getElementById("refresh-btn"),
     exportBtn: document.getElementById("export-csv"),
@@ -27,6 +30,8 @@
     metric: persisted.metric || "tokens",
     sortKey: persisted.sortKey || "timestamp",
     sortOrder: persisted.sortOrder || "desc",
+    breakdownSortKey: persisted.breakdownSortKey || "totalTokens",
+    breakdownSortOrder: persisted.breakdownSortOrder || "desc",
   };
 
   let state = null;
@@ -53,6 +58,8 @@
       metric: local.metric,
       sortKey: local.sortKey,
       sortOrder: local.sortOrder,
+      breakdownSortKey: local.breakdownSortKey,
+      breakdownSortOrder: local.breakdownSortOrder,
     });
   }
 
@@ -80,9 +87,13 @@
   }
 
   function formatTokens(n) {
-    if (n >= 1e9) return (n / 1e9).toFixed(1) + "B";
-    if (n >= 1e6) return (n / 1e6).toFixed(1) + "M";
-    if (n >= 1e3) return (n / 1e3).toFixed(1) + "K";
+    const trim = (v) => {
+      const s = v.toFixed(1);
+      return s.endsWith(".0") ? s.slice(0, -2) : s;
+    };
+    if (n >= 1e9) return trim(n / 1e9) + "B";
+    if (n >= 1e6) return trim(n / 1e6) + "M";
+    if (n >= 1e3) return trim(n / 1e3) + "K";
     return String(Math.round(n));
   }
 
@@ -183,18 +194,29 @@
   function buildChartSeries() {
     const cutoff = getDurationCutoff(local.range, state.resetsAt, state.generatedAt);
     const start = startOfUtcDay(cutoff);
-    const end = startOfUtcDay(state.generatedAt);
+    // For the billing cycle range, extend the x-axis to the end of the current cycle
+    // (the day before the next reset) so empty future days are visible.
+    let end = startOfUtcDay(state.generatedAt);
+    if (local.range === "billingCycle" && state.resetsAt) {
+      const reset = new Date(state.resetsAt);
+      if (!Number.isNaN(reset.getTime())) {
+        // Show through the last day of the cycle (day before reset).
+        const cycleEnd = startOfUtcDay(reset.getTime() - DAY_MS);
+        if (cycleEnd > end) end = cycleEnd;
+      }
+    }
     const days = [];
     for (let d = start; d <= end; d += DAY_MS) days.push(d);
     if (days.length === 0) days.push(end);
     const dayIndex = new Map(days.map((d, i) => [d, i]));
 
     const perModel = new Map();
-    const ensureModel = (m) => {
-      let arr = perModel.get(m);
+    const perModelSpend = new Map();
+    const ensureArr = (map, m) => {
+      let arr = map.get(m);
       if (!arr) {
         arr = new Array(days.length).fill(0);
-        perModel.set(m, arr);
+        map.set(m, arr);
       }
       return arr;
     };
@@ -210,12 +232,18 @@
         local.metric === "tokens" ? (e.totalTokens || 0) :
         local.metric === "requests" ? (e.requests || 0) :
         ((e.spendCents || 0) / 100);
-      ensureModel(e.model)[idx] += value;
+      ensureArr(perModel, e.model)[idx] += value;
+      ensureArr(perModelSpend, e.model)[idx] += (e.spendCents || 0) / 100;
     }
 
     const datasets = [];
     for (const [model, arr] of perModel.entries()) {
-      datasets.push({ model, data: arr.slice(), total: arr.reduce((a, b) => a + b, 0) });
+      datasets.push({
+        model,
+        data: arr.slice(),
+        spendByDay: (perModelSpend.get(model) || new Array(days.length).fill(0)).slice(),
+        total: arr.reduce((a, b) => a + b, 0),
+      });
     }
     // Sort by total over the range, descending — biggest contributor first.
     datasets.sort((a, b) => b.total - a.total);
@@ -236,6 +264,103 @@
 
   function colorForModel(model) {
     return modelColorMap.get(model) || "rgba(255,255,255,0.4)";
+  }
+
+  function tintColor(color, alpha) {
+    if (!color) return "rgba(255,255,255," + alpha + ")";
+    if (color.startsWith("#")) {
+      const hex = color.slice(1);
+      const full = hex.length === 3
+        ? hex.split("").map((c) => c + c).join("")
+        : hex;
+      const r = parseInt(full.slice(0, 2), 16);
+      const g = parseInt(full.slice(2, 4), 16);
+      const b = parseInt(full.slice(4, 6), 16);
+      return "rgba(" + r + "," + g + "," + b + "," + alpha + ")";
+    }
+    if (color.startsWith("rgb(")) {
+      return color.replace("rgb(", "rgba(").replace(")", "," + alpha + ")");
+    }
+    if (color.startsWith("rgba(")) {
+      return color.replace(/rgba\(([^,]+),([^,]+),([^,]+),[^)]+\)/, "rgba($1,$2,$3," + alpha + ")");
+    }
+    return color;
+  }
+
+  function getOrCreateTooltipEl() {
+    let el = document.getElementById("chart-tooltip");
+    if (!el) {
+      el = document.createElement("div");
+      el.id = "chart-tooltip";
+      el.className = "chart-tooltip";
+      document.body.appendChild(el);
+    }
+    return el;
+  }
+
+  function renderExternalTooltip(context, opts) {
+    const { chart, tooltip } = context;
+    const el = getOrCreateTooltipEl();
+    if (tooltip.opacity === 0) {
+      el.style.opacity = "0";
+      return;
+    }
+
+    const dataPoints = (tooltip.dataPoints || [])
+      .filter((dp) => (dp.parsed.y || 0) > 0)
+      .sort((a, b) => (b.parsed.y || 0) - (a.parsed.y || 0));
+
+    const title = (tooltip.title && tooltip.title[0]) || "";
+    const isSpend = opts.isSpend;
+    const metricLabel = isSpend ? "Spend" : opts.metric === "tokens" ? "Tokens" : "Requests";
+
+    const formatMetric = (v) =>
+      isSpend ? formatDollars(v) : opts.metric === "tokens" ? formatTokens(v) : formatRequests(v);
+
+    const rows = dataPoints.map((dp) => {
+      const ds = dp.dataset;
+      const v = dp.parsed.y || 0;
+      const spend = isSpend ? v : (ds.spendByDay ? (ds.spendByDay[dp.dataIndex] || 0) : 0);
+      const color = ds.backgroundColor || colorForModel(ds.label);
+      return (
+        '<tr>' +
+          '<td><span class="t-dot" style="background:' + color + '"></span>' + escapeHtml(ds.label) + '</td>' +
+          '<td class="num">' + formatMetric(v) + '</td>' +
+          (isSpend ? "" : '<td class="num">' + formatDollars(spend) + '</td>') +
+        '</tr>'
+      );
+    }).join("");
+
+    const headerCols = isSpend
+      ? '<th>Model</th><th class="num">' + metricLabel + '</th>'
+      : '<th>Model</th><th class="num">' + metricLabel + '</th><th class="num">Spend</th>';
+
+    el.innerHTML =
+      '<div class="t-title">' + escapeHtml(title) + '</div>' +
+      '<table class="t-table"><thead><tr>' + headerCols + '</tr></thead><tbody>' + rows + '</tbody></table>';
+
+    // Position tooltip relative to the canvas, keeping it inside the chart bounds.
+    const canvasRect = chart.canvas.getBoundingClientRect();
+    const tooltipWidth = el.offsetWidth;
+    const tooltipHeight = el.offsetHeight;
+    const padding = 12;
+
+    let left = canvasRect.left + window.scrollX + tooltip.caretX + padding;
+    let top = canvasRect.top + window.scrollY + tooltip.caretY - tooltipHeight / 2;
+
+    // Flip to the left of the cursor if it would overflow the right edge.
+    if (left + tooltipWidth > canvasRect.right + window.scrollX) {
+      left = canvasRect.left + window.scrollX + tooltip.caretX - tooltipWidth - padding;
+    }
+    // Clamp vertically.
+    const minTop = canvasRect.top + window.scrollY + 4;
+    const maxTop = canvasRect.bottom + window.scrollY - tooltipHeight - 4;
+    if (top < minTop) top = minTop;
+    if (top > maxTop) top = maxTop;
+
+    el.style.left = left + "px";
+    el.style.top = top + "px";
+    el.style.opacity = "1";
   }
 
   function renderChart() {
@@ -262,6 +387,7 @@
       datasets: series.datasets.map((d, i) => ({
         label: d.model,
         data: d.data,
+        spendByDay: d.spendByDay,
         backgroundColor: PALETTE[i % PALETTE.length],
         borderColor: PALETTE[i % PALETTE.length],
         borderWidth: 0,
@@ -291,7 +417,7 @@
       plugins: {
         legend: {
           position: "bottom",
-          align: "start",
+          align: "center",
           labels: {
             color: muted,
             boxWidth: 8,
@@ -303,24 +429,8 @@
           },
         },
         tooltip: {
-          itemSort: (a, b) => (b.parsed.y || 0) - (a.parsed.y || 0),
-          filter: (item) => (item.parsed.y || 0) > 0,
-          backgroundColor: "rgba(20,20,20,0.96)",
-          borderColor: "rgba(255,255,255,0.12)",
-          borderWidth: 1,
-          padding: 10,
-          titleColor: "rgba(255,255,255,0.95)",
-          bodyColor: "rgba(255,255,255,0.85)",
-          titleFont: { size: 11, weight: "600" },
-          bodyFont: { size: 11 },
-          boxPadding: 4,
-          callbacks: {
-            label: (ctx) => {
-              const v = ctx.parsed.y || 0;
-              const formatted = isSpend ? formatDollars(v) : local.metric === "tokens" ? formatTokens(v) : v.toLocaleString();
-              return ctx.dataset.label + ": " + formatted;
-            },
-          },
+          enabled: false,
+          external: (context) => renderExternalTooltip(context, { isSpend, metric: local.metric }),
         },
       },
       scales: {
@@ -382,17 +492,22 @@
     const events = getSortedEvents();
 
     if (events.length === 0) {
-      ui.tableBody.innerHTML = '<tr><td colspan="5" style="text-align:center; padding:24px;" class="muted">No events in this range</td></tr>';
+      ui.tableBody.innerHTML = '<tr><td colspan="6" style="text-align:center; padding:24px;" class="muted">No events in this range</td></tr>';
     } else {
       ui.tableBody.innerHTML = events.map((e) => {
         const maxBadge = e.maxMode ? ' <span class="max-badge">MAX</span>' : "";
-        const dot = '<span class="model-dot" style="background:' + colorForModel(e.model) + '"></span>';
-        return "<tr>" +
+        const color = colorForModel(e.model);
+        const spend = (e.spendCents || 0) / 100;
+        // Tint the row with a low-alpha derivative of the model color and add a
+        // brighter left border for clearer association with the chart.
+        const rowStyle = 'background:' + tintColor(color, 0.10) + ';box-shadow:inset 3px 0 0 ' + color + ';';
+        return '<tr style="' + rowStyle + '">' +
           "<td>" + formatDateTime(e.timestamp) + "</td>" +
           '<td><span class="kind-badge kind-' + e.kind.replace(/[^A-Za-z]/g, "") + '">' + e.kind + "</span></td>" +
-          '<td><span class="model-cell">' + dot + escapeHtml(e.model) + "</span>" + maxBadge + "</td>" +
+          "<td>" + escapeHtml(e.model) + maxBadge + "</td>" +
           '<td class="num">' + formatTokens(e.totalTokens || 0) + "</td>" +
           '<td class="num">' + formatRequests(e.requests || 0) + "</td>" +
+          '<td class="num">' + formatDollars(spend) + "</td>" +
         "</tr>";
       }).join("");
     }
@@ -413,6 +528,67 @@
 
   function escapeHtml(s) {
     return String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
+  }
+
+  function rangeLabel() {
+    if (local.range === "1d") return "Last 24 hours";
+    if (local.range === "7d") return "Last 7 days";
+    if (local.range === "30d") return "Last 30 days";
+    return "Current Billing Cycle";
+  }
+
+  function aggregateModelBreakdown() {
+    if (!state) return [];
+    const cutoff = getDurationCutoff(local.range, state.resetsAt, state.generatedAt);
+    const map = new Map();
+    for (const e of state.events) {
+      const ts = toMillis(e.timestamp);
+      if (!Number.isFinite(ts) || ts < cutoff) continue;
+      if (!matchesUsageFilter(e, local.usageFilter)) continue;
+      const entry = map.get(e.model) || { model: e.model, requests: 0, totalTokens: 0, spendCents: 0 };
+      entry.requests += e.requests || 0;
+      entry.totalTokens += e.totalTokens || 0;
+      entry.spendCents += e.spendCents || 0;
+      map.set(e.model, entry);
+    }
+    const rows = Array.from(map.values());
+    const dir = local.breakdownSortOrder === "asc" ? 1 : -1;
+    const key = local.breakdownSortKey;
+    rows.sort((a, b) => {
+      const av = a[key], bv = b[key];
+      if (typeof av === "number" && typeof bv === "number") return (av - bv) * dir;
+      return String(av).localeCompare(String(bv)) * dir;
+    });
+    return rows;
+  }
+
+  function renderBreakdown() {
+    if (ui.breakdownRangeLabel) ui.breakdownRangeLabel.textContent = "(" + rangeLabel() + ")";
+    const rows = aggregateModelBreakdown();
+
+    if (ui.breakdownHead) {
+      ui.breakdownHead.querySelectorAll("th.sortable").forEach((th) => {
+        th.classList.remove("sorted-asc", "sorted-desc");
+        if (th.dataset.sort === local.breakdownSortKey) {
+          th.classList.add(local.breakdownSortOrder === "asc" ? "sorted-asc" : "sorted-desc");
+        }
+      });
+    }
+
+    if (rows.length === 0) {
+      ui.breakdownBody.innerHTML = '<tr><td colspan="4" style="text-align:center; padding:24px;" class="muted">No usage in this range</td></tr>';
+      return;
+    }
+    ui.breakdownBody.innerHTML = rows.map((r) => {
+      const color = colorForModel(r.model);
+      const rowStyle = 'background:' + tintColor(color, 0.10) + ';box-shadow:inset 3px 0 0 ' + color + ';';
+      return '<tr style="' + rowStyle + '">' +
+        '<td>' + escapeHtml(r.model) + '</td>' +
+        '<td class="num">' + formatRequests(r.requests) + '</td>' +
+        '<td class="num">' + formatTokens(r.totalTokens) + '</td>' +
+        '<td class="num">' + formatDollars(r.spendCents / 100) + '</td>' +
+      '</tr>';
+    }).join("");
   }
 
   function exportCsv() {
@@ -474,6 +650,7 @@
     applyTeamMemberConstraints();
     renderSummaryCards();
     renderChart();
+    renderBreakdown();
     renderTable();
     showError(state.error);
     ui.lastUpdated.textContent = "Updated " + new Date(state.generatedAt).toLocaleTimeString();
@@ -492,6 +669,7 @@
     local.usageFilter = ui.usageFilter.value;
     persistLocal();
     renderChart();
+    renderBreakdown();
     renderTable();
   });
 
@@ -514,6 +692,22 @@
     persistLocal();
     renderTable();
   });
+
+  if (ui.breakdownHead) {
+    ui.breakdownHead.addEventListener("click", (e) => {
+      const th = e.target.closest("th.sortable");
+      if (!th) return;
+      const key = th.dataset.sort;
+      if (local.breakdownSortKey === key) {
+        local.breakdownSortOrder = local.breakdownSortOrder === "asc" ? "desc" : "asc";
+      } else {
+        local.breakdownSortKey = key;
+        local.breakdownSortOrder = key === "model" ? "asc" : "desc";
+      }
+      persistLocal();
+      renderBreakdown();
+    });
+  }
 
   ui.refreshBtn.addEventListener("click", () => {
     vscode.postMessage({ type: "refresh" });
