@@ -2,6 +2,11 @@
 
 All notable changes to this project are documented in this file.
 
+## [0.5.10] - 2026-04-29
+
+### Changed
+- README now includes a screenshot of the in-editor dashboard alongside the existing tooltip screenshot, and lists the new `Cursor Usage: Open Dashboard` command.
+
 ## [0.5.7] - 2026-04-29
 
 ### Added
