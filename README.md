@@ -1,28 +1,31 @@
 # Cursor Usage
 
-See Cursor usage in your status bar: included requests and on-demand spend, live while you work.
+See Cursor usage in your status bar: included requests and on-demand spend, live while you work. Click the status bar item to open a full dashboard inside your editor.
 
 ![Cursor Usage extension tooltip](media/extensions-tooltip.png)
+
+![Cursor Usage dashboard](media/extensions-dashboard.png)
 
 ## What you get
 
 - Compact status bar display (for example: `500/500 | $114.78/$300`).
 - Detailed hover tooltip with progress bars, reset countdown, and per-model usage.
+- Full dashboard tab with summary cards, a per-day stacked bar chart, a sortable Usage by Model table, and a per-event Events table with Export CSV.
 - Loading indicator while fresh usage data is being fetched.
-- Quick action to open a usage summary and dashboard link.
 - Smart refresh behavior tied to editor activity and window focus.
 - Optional minimal mode to show only the active metric.
 
 ## Commands
 
-- `Cursor Usage: Show Details` - open usage summary with dashboard link.
+- `Cursor Usage: Open Dashboard` - open the in-editor dashboard.
+- `Cursor Usage: Show Details` - show a quick usage summary message.
 - `Cursor Usage: Refresh` - force a refresh immediately.
 
 ## Settings
 
 - `cursorUsage.pollInterval` (default: `5`) - minimum refresh cooldown in minutes (`1`, `5`, `10`, `30`, `60`).
 - `cursorUsage.minimalMode` (default: `false`) - show only the active metric.
-- `cursorUsage.usageDuration` (default: `billingCycle`) - model-usage range: `1d`, `7d`, `30d`, or `billingCycle`.
+- `cursorUsage.usageDuration` (default: `billingCycle`) - tooltip model-usage range: `1d`, `7d`, `30d`, or `billingCycle`.
 
 ## Privacy and behavior
 
