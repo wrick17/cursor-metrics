@@ -2,6 +2,12 @@
 
 All notable changes to this project are documented in this file.
 
+## [0.5.11] - 2026-04-29
+
+### Fixed
+- Dashboard chart axis labels, gridlines, and legend text are now visible in light themes. VS Code webviews don't honor `prefers-color-scheme`, so light tokens are now applied via the `body.vscode-light` / `body.vscode-high-contrast-light` selectors that VS Code sets on the webview body.
+- Chart tooltip uses themed surface, border, and foreground tokens instead of hardcoded dark colors so it remains readable in light themes.
+
 ## [0.5.10] - 2026-04-29
 
 ### Changed
