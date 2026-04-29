@@ -2,6 +2,11 @@
 
 All notable changes to this project are documented in this file.
 
+## [0.5.1] - 2026-04-29
+
+### Fixed
+- VS Marketplace package now includes the `media/` directory so the dashboard webview's CSS, JavaScript, and bundled Chart.js load correctly. Previous 0.5.0 build shipped only `dist/` and `test/`, leaving the dashboard unstyled and non-interactive on VSCode.
+
 ## [0.5.0] - 2026-04-29
 
 ### Added
