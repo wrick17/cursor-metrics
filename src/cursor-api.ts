@@ -1,7 +1,7 @@
-import { execSync } from "child_process";
 import { existsSync } from "fs";
 import { homedir } from "os";
 import { join } from "path";
+import sqlite3 from "sqlite3";
 
 export type UsagePayload = {
   includedRequests: { used: number; limit: number };
@@ -54,7 +54,36 @@ type AuthInfo = { userId: string; sessionToken: string; email: string | null };
 let cachedAuth: { info: AuthInfo | null; ts: number } = { info: null, ts: 0 };
 const AUTH_CACHE_TTL = 10_000;
 
-function getCursorToken(): AuthInfo | null {
+function readCursorDbValue(dbPath: string, key: string): Promise<string | null> {
+  return new Promise((resolve, reject) => {
+    const db = new sqlite3.Database(dbPath, sqlite3.OPEN_READONLY, (openErr) => {
+      if (openErr) {
+        reject(openErr);
+        return;
+      }
+
+      db.get(
+        "SELECT value FROM ItemTable WHERE key = ?",
+        [key],
+        (queryErr: Error | null, row: { value?: string } | undefined) => {
+          db.close((closeErr) => {
+            if (queryErr) {
+              reject(queryErr);
+              return;
+            }
+            if (closeErr) {
+              reject(closeErr);
+              return;
+            }
+            resolve(typeof row?.value === "string" ? row.value : null);
+          });
+        },
+      );
+    });
+  });
+}
+
+async function getCursorToken(): Promise<AuthInfo | null> {
   if (cachedAuth.info && Date.now() - cachedAuth.ts < AUTH_CACHE_TTL) {
     log("Using cached auth token");
     return cachedAuth.info;
@@ -68,10 +97,15 @@ function getCursorToken(): AuthInfo | null {
     return null;
   }
 
-  const run = (query: string) =>
-    execSync(`sqlite3 "${dbPath}" "${query}"`, { encoding: "utf-8", timeout: 10_000 }).trim();
+  let jwt: string | null = null;
+  try {
+    jwt = await readCursorDbValue(dbPath, "cursorAuth/accessToken");
+  } catch (error) {
+    const msg = error instanceof Error ? error.message : String(error);
+    log(`Could not read accessToken from database: ${msg}`);
+    return null;
+  }
 
-  const jwt = run("SELECT value FROM ItemTable WHERE key = 'cursorAuth/accessToken'");
   if (!jwt) {
     log("No accessToken found in database");
     return null;
@@ -84,7 +118,7 @@ function getCursorToken(): AuthInfo | null {
 
   let email: string | null = null;
   try {
-    email = run("SELECT value FROM ItemTable WHERE key = 'cursorAuth/cachedEmail'") || null;
+    email = await readCursorDbValue(dbPath, "cursorAuth/cachedEmail");
     log(`Cached email: ${email}`);
   } catch {
     log("Could not read cachedEmail from database");
@@ -288,7 +322,7 @@ async function ensureSetup(
 export async function fetchUsageData(): Promise<UsagePayload | null> {
   log("--- Fetching usage data ---");
 
-  const auth = getCursorToken();
+  const auth = await getCursorToken();
   if (!auth) {
     log("Failed to get auth token");
     return null;
@@ -501,7 +535,7 @@ async function resolveDashboardUserId(
 export async function fetchDailySpendByCategory(): Promise<DailySpendRow[]> {
   log("--- Fetching daily spend by category ---");
 
-  const auth = getCursorToken();
+  const auth = await getCursorToken();
   if (!auth) {
     log("Failed to get auth token for daily spend");
     return [];
@@ -561,7 +595,7 @@ function parseEventKind(kind: string): string {
 export async function fetchUsageEvents(): Promise<UsageEvent[]> {
   log("--- Fetching usage events ---");
 
-  const auth = getCursorToken();
+  const auth = await getCursorToken();
   if (!auth) {
     log("Failed to get auth token for events");
     return [];
