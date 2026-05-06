@@ -202,7 +202,13 @@ label select { color: var(--fg); }
   align-items: flex-start;
   margin-bottom: 10px;
 }
-.chart-header .section-toggle p {
+.section-title-row {
+  display: inline-flex;
+  align-items: flex-start;
+  gap: 8px;
+  cursor: pointer;
+}
+.chart-header .section-title-row p {
   margin: 2px 0 0 0;
   font-size: 11px;
 }
@@ -211,22 +217,30 @@ label select { color: var(--fg); }
 .section-toggle {
   display: inline-flex;
   align-items: center;
-  gap: 8px;
+  justify-content: center;
+  width: 14px;
+  height: 14px;
   padding: 0;
   border: none;
+  outline: none;
   background: transparent;
-  color: var(--fg);
-  text-align: left;
+  color: var(--muted);
+  line-height: 1;
+  margin-top: 1px;
+  cursor: pointer;
 }
-.section-toggle:hover,
-.section-toggle:focus-visible {
+.section-toggle:hover {
+  color: var(--fg);
   background: transparent;
   border-color: transparent;
 }
+.section-toggle:focus-visible {
+  background: transparent;
+  outline: 1px solid var(--border-strong);
+  border-radius: 2px;
+}
 .section-arrow {
-  width: 10px;
   font-size: 10px;
-  color: var(--muted);
   line-height: 1;
 }
 .collapsible-section.collapsed .chart-header,

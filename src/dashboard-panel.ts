@@ -139,19 +139,22 @@ export class DashboardPanel {
 
   <section class="chart-section collapsible-section" data-section="usage">
     <div class="chart-header">
-      <button
-        type="button"
-        class="section-toggle"
-        data-toggle-section="usage"
-        aria-expanded="true"
-        aria-controls="section-body-usage"
-      >
-        <span class="section-arrow" aria-hidden="true">▾</span>
+      <div class="section-title-row" data-toggle-section="usage">
+        <button
+          type="button"
+          class="section-toggle"
+          data-toggle-section="usage"
+          aria-expanded="true"
+          aria-controls="section-body-usage"
+          aria-label="Toggle Your Usage section"
+        >
+          <span class="section-arrow" aria-hidden="true">▾</span>
+        </button>
         <div>
           <h2>Your Usage</h2>
           <p class="muted">Per-day usage over the selected range</p>
         </div>
-      </button>
+      </div>
       <div class="chart-filters">
         <label>Usage:
           <select id="usage-filter">
@@ -179,16 +182,19 @@ export class DashboardPanel {
 
   <section class="model-breakdown-section collapsible-section" data-section="breakdown">
     <div class="events-header">
-      <button
-        type="button"
-        class="section-toggle"
-        data-toggle-section="breakdown"
-        aria-expanded="true"
-        aria-controls="section-body-breakdown"
-      >
-        <span class="section-arrow" aria-hidden="true">▾</span>
+      <div class="section-title-row" data-toggle-section="breakdown">
+        <button
+          type="button"
+          class="section-toggle"
+          data-toggle-section="breakdown"
+          aria-expanded="true"
+          aria-controls="section-body-breakdown"
+          aria-label="Toggle Usage by Model section"
+        >
+          <span class="section-arrow" aria-hidden="true">▾</span>
+        </button>
         <h2>Usage by Model</h2>
-      </button>
+      </div>
       <span class="muted small" id="breakdown-range-label"></span>
     </div>
     <div id="section-body-breakdown" class="section-body">
@@ -210,16 +216,19 @@ export class DashboardPanel {
 
   <section class="events-section collapsible-section" data-section="events">
     <div class="events-header">
-      <button
-        type="button"
-        class="section-toggle"
-        data-toggle-section="events"
-        aria-expanded="true"
-        aria-controls="section-body-events"
-      >
-        <span class="section-arrow" aria-hidden="true">▾</span>
+      <div class="section-title-row" data-toggle-section="events">
+        <button
+          type="button"
+          class="section-toggle"
+          data-toggle-section="events"
+          aria-expanded="true"
+          aria-controls="section-body-events"
+          aria-label="Toggle Events section"
+        >
+          <span class="section-arrow" aria-hidden="true">▾</span>
+        </button>
         <h2>Events</h2>
-      </button>
+      </div>
       <button id="export-csv" type="button">Export CSV</button>
     </div>
     <div id="section-body-events" class="section-body">

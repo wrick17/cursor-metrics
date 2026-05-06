@@ -740,9 +740,9 @@
 
   ui.exportBtn.addEventListener("click", exportCsv);
 
-  document.querySelectorAll(".section-toggle").forEach((btn) => {
-    btn.addEventListener("click", () => {
-      const section = btn.dataset.toggleSection;
+  document.querySelectorAll(".section-title-row[data-toggle-section]").forEach((row) => {
+    row.addEventListener("click", () => {
+      const section = row.dataset.toggleSection;
       if (!section || !Object.prototype.hasOwnProperty.call(local.sectionOpen, section)) return;
       local.sectionOpen[section] = !local.sectionOpen[section];
       persistLocal();
