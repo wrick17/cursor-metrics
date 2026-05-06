@@ -10,6 +10,11 @@
   --muted-2: rgba(255,255,255,0.35);
   --accent: var(--vscode-textLink-foreground, #fafafa);
   --bar-track: rgba(255,255,255,0.08);
+  --input-bg: var(--vscode-dropdown-background, var(--vscode-input-background, #1f1f1f));
+  --input-fg: var(--vscode-dropdown-foreground, var(--vscode-input-foreground, #fafafa));
+  --input-border: var(--vscode-dropdown-border, var(--vscode-input-border, rgba(255,255,255,0.12)));
+  --input-option-bg: var(--vscode-dropdown-listBackground, var(--vscode-editorWidget-background, #141414));
+  --input-option-fg: var(--vscode-dropdown-listForeground, var(--vscode-foreground, #fafafa));
   --radius: 8px;
   --radius-sm: 6px;
 }
@@ -27,6 +32,11 @@ body.vscode-high-contrast-light {
   --muted: rgba(0,0,0,0.55);
   --muted-2: rgba(0,0,0,0.35);
   --bar-track: rgba(0,0,0,0.08);
+  --input-bg: var(--vscode-dropdown-background, var(--vscode-input-background, #ffffff));
+  --input-fg: var(--vscode-dropdown-foreground, var(--vscode-input-foreground, #0a0a0a));
+  --input-border: var(--vscode-dropdown-border, var(--vscode-input-border, rgba(0,0,0,0.15)));
+  --input-option-bg: var(--vscode-dropdown-listBackground, #ffffff);
+  --input-option-fg: var(--vscode-dropdown-listForeground, #0a0a0a);
 }
 
 * { box-sizing: border-box; }
@@ -75,9 +85,9 @@ button.active {
 }
 
 select {
-  background: transparent;
-  color: var(--fg);
-  border: 1px solid var(--border);
+  background: var(--input-bg);
+  color: var(--input-fg);
+  border: 1px solid var(--input-border);
   padding: 3px 22px 3px 8px;
   border-radius: var(--radius-sm);
   font-family: inherit;
@@ -91,6 +101,15 @@ select {
   cursor: pointer;
 }
 select:hover { border-color: var(--border-strong); }
+select:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+select option,
+select optgroup {
+  color: var(--input-option-fg);
+  background: var(--input-option-bg);
+}
 
 label {
   color: var(--muted);
@@ -100,7 +119,7 @@ label {
   gap: 6px;
   font-weight: 500;
 }
-label select { color: var(--fg); }
+label select { color: var(--input-fg); }
 
 .dashboard-header {
   display: flex;
