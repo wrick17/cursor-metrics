@@ -202,11 +202,37 @@ label select { color: var(--fg); }
   align-items: flex-start;
   margin-bottom: 10px;
 }
-.chart-header > div:first-child p {
+.chart-header .section-toggle p {
   margin: 2px 0 0 0;
   font-size: 11px;
 }
 .chart-filters { display: flex; gap: 14px; }
+
+.section-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: var(--fg);
+  text-align: left;
+}
+.section-toggle:hover,
+.section-toggle:focus-visible {
+  background: transparent;
+  border-color: transparent;
+}
+.section-arrow {
+  width: 10px;
+  font-size: 10px;
+  color: var(--muted);
+  line-height: 1;
+}
+.collapsible-section.collapsed .chart-header,
+.collapsible-section.collapsed .events-header {
+  margin-bottom: 0;
+}
 
 .chart-wrapper {
   position: relative;

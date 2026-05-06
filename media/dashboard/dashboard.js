@@ -32,6 +32,11 @@
     sortOrder: persisted.sortOrder || "desc",
     breakdownSortKey: persisted.breakdownSortKey || "totalTokens",
     breakdownSortOrder: persisted.breakdownSortOrder || "desc",
+    sectionOpen: {
+      usage: persisted.sectionOpen?.usage !== false,
+      breakdown: persisted.sectionOpen?.breakdown !== false,
+      events: persisted.sectionOpen?.events !== false,
+    },
   };
 
   let state = null;
@@ -60,7 +65,26 @@
       sortOrder: local.sortOrder,
       breakdownSortKey: local.breakdownSortKey,
       breakdownSortOrder: local.breakdownSortOrder,
+      sectionOpen: local.sectionOpen,
     });
+  }
+
+  function setSectionCollapsed(section, isOpen) {
+    const sectionEl = document.querySelector('.collapsible-section[data-section="' + section + '"]');
+    const bodyEl = document.getElementById("section-body-" + section);
+    const toggleEl = document.querySelector('.section-toggle[data-toggle-section="' + section + '"]');
+    if (!sectionEl || !bodyEl || !toggleEl) return;
+    sectionEl.classList.toggle("collapsed", !isOpen);
+    bodyEl.classList.toggle("hidden", !isOpen);
+    toggleEl.setAttribute("aria-expanded", isOpen ? "true" : "false");
+    const arrowEl = toggleEl.querySelector(".section-arrow");
+    if (arrowEl) arrowEl.textContent = isOpen ? "▾" : "▸";
+  }
+
+  function applySectionState() {
+    setSectionCollapsed("usage", local.sectionOpen.usage);
+    setSectionCollapsed("breakdown", local.sectionOpen.breakdown);
+    setSectionCollapsed("events", local.sectionOpen.events);
   }
 
   function startOfUtcDay(ts) {
@@ -644,6 +668,7 @@
 
   function renderAll() {
     if (!state) return;
+    applySectionState();
     setActiveRangeButton();
     ui.usageFilter.value = local.usageFilter;
     ui.metricFilter.value = local.metric;
@@ -715,6 +740,20 @@
 
   ui.exportBtn.addEventListener("click", exportCsv);
 
+  document.querySelectorAll(".section-toggle").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const section = btn.dataset.toggleSection;
+      if (!section || !Object.prototype.hasOwnProperty.call(local.sectionOpen, section)) return;
+      local.sectionOpen[section] = !local.sectionOpen[section];
+      persistLocal();
+      applySectionState();
+      // Chart.js needs a redraw when the canvas becomes visible again.
+      if (section === "usage" && local.sectionOpen.usage && state) {
+        renderChart();
+      }
+    });
+  });
+
   window.addEventListener("message", (event) => {
     const msg = event.data;
     if (!msg || typeof msg !== "object") return;
@@ -727,6 +766,7 @@
     }
   });
 
+  applySectionState();
   // Tell host we're ready
   vscode.postMessage({ type: "ready" });
 })();

@@ -137,12 +137,21 @@ export class DashboardPanel {
     </div>
   </section>
 
-  <section class="chart-section">
+  <section class="chart-section collapsible-section" data-section="usage">
     <div class="chart-header">
-      <div>
-        <h2>Your Usage</h2>
-        <p class="muted">Per-day usage over the selected range</p>
-      </div>
+      <button
+        type="button"
+        class="section-toggle"
+        data-toggle-section="usage"
+        aria-expanded="true"
+        aria-controls="section-body-usage"
+      >
+        <span class="section-arrow" aria-hidden="true">▾</span>
+        <div>
+          <h2>Your Usage</h2>
+          <p class="muted">Per-day usage over the selected range</p>
+        </div>
+      </button>
       <div class="chart-filters">
         <label>Usage:
           <select id="usage-filter">
@@ -160,53 +169,77 @@ export class DashboardPanel {
         </label>
       </div>
     </div>
-    <div class="chart-wrapper">
-      <canvas id="usage-chart"></canvas>
+    <div id="section-body-usage" class="section-body">
+      <div class="chart-wrapper">
+        <canvas id="usage-chart"></canvas>
+      </div>
+      <p id="chart-note" class="muted small"></p>
     </div>
-    <p id="chart-note" class="muted small"></p>
   </section>
 
-  <section class="model-breakdown-section">
+  <section class="model-breakdown-section collapsible-section" data-section="breakdown">
     <div class="events-header">
-      <h2>Usage by Model</h2>
+      <button
+        type="button"
+        class="section-toggle"
+        data-toggle-section="breakdown"
+        aria-expanded="true"
+        aria-controls="section-body-breakdown"
+      >
+        <span class="section-arrow" aria-hidden="true">▾</span>
+        <h2>Usage by Model</h2>
+      </button>
       <span class="muted small" id="breakdown-range-label"></span>
     </div>
-    <div class="table-scroll">
-      <table id="breakdown-table">
-        <thead>
-          <tr>
-            <th data-sort="model" class="sortable">Model</th>
-            <th data-sort="requests" class="sortable num">Requests</th>
-            <th data-sort="totalTokens" class="sortable num">Tokens</th>
-            <th data-sort="spendCents" class="sortable num">Spend</th>
-          </tr>
-        </thead>
-        <tbody></tbody>
-      </table>
+    <div id="section-body-breakdown" class="section-body">
+      <div class="table-scroll">
+        <table id="breakdown-table">
+          <thead>
+            <tr>
+              <th data-sort="model" class="sortable">Model</th>
+              <th data-sort="requests" class="sortable num">Requests</th>
+              <th data-sort="totalTokens" class="sortable num">Tokens</th>
+              <th data-sort="spendCents" class="sortable num">Spend</th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </div>
     </div>
   </section>
 
-  <section class="events-section">
+  <section class="events-section collapsible-section" data-section="events">
     <div class="events-header">
-      <h2>Events</h2>
+      <button
+        type="button"
+        class="section-toggle"
+        data-toggle-section="events"
+        aria-expanded="true"
+        aria-controls="section-body-events"
+      >
+        <span class="section-arrow" aria-hidden="true">▾</span>
+        <h2>Events</h2>
+      </button>
       <button id="export-csv" type="button">Export CSV</button>
     </div>
-    <div class="table-scroll">
-      <table id="events-table">
-        <thead>
-          <tr>
-            <th data-sort="timestamp" class="sortable">Date</th>
-            <th data-sort="kind" class="sortable">Type</th>
-            <th data-sort="model" class="sortable">Model</th>
-            <th data-sort="totalTokens" class="sortable num">Tokens</th>
-            <th data-sort="requests" class="sortable num">Requests</th>
-            <th data-sort="spendCents" class="sortable num">Spend</th>
-          </tr>
-        </thead>
-        <tbody></tbody>
-      </table>
+    <div id="section-body-events" class="section-body">
+      <div class="table-scroll">
+        <table id="events-table">
+          <thead>
+            <tr>
+              <th data-sort="timestamp" class="sortable">Date</th>
+              <th data-sort="kind" class="sortable">Type</th>
+              <th data-sort="model" class="sortable">Model</th>
+              <th data-sort="totalTokens" class="sortable num">Tokens</th>
+              <th data-sort="requests" class="sortable num">Requests</th>
+              <th data-sort="spendCents" class="sortable num">Spend</th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </div>
+      <div class="pagination" id="pagination"></div>
     </div>
-    <div class="pagination" id="pagination"></div>
   </section>
 
   <div id="error-banner" class="error-banner hidden"></div>
