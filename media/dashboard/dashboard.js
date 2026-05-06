@@ -623,8 +623,9 @@
 
   function csvCell(v) {
     const s = String(v);
-    if (/[",\n]/.test(s)) return '"' + s.replace(/"/g, '""') + '"';
-    return s;
+    const safe = /^\s*[=+\-@]/.test(s) ? "'" + s : s;
+    if (/[",\n]/.test(safe)) return '"' + safe.replace(/"/g, '""') + '"';
+    return safe;
   }
 
   function applyTeamMemberConstraints() {

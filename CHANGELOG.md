@@ -2,6 +2,16 @@
 
 All notable changes to this project are documented in this file.
 
+## [0.5.14] - 2026-05-06
+
+### Fixed
+- Read Cursor auth tokens directly from `state.vscdb` without requiring a `sqlite3` CLI on PATH, native SQLite bindings, or platform-specific binaries.
+- Support Cursor databases using WAL mode so freshly written auth values are visible.
+- Avoid loading multi-GB Cursor databases into memory by traversing the SQLite table B-tree and reading only the auth rows needed.
+- Harden dashboard CSV export against spreadsheet formula injection.
+- Escape model names in trusted tooltip HTML and restrict trusted Markdown commands to known extension commands.
+- Add request timeouts and a pagination cap for Cursor API fetches so refreshes cannot hang indefinitely.
+
 ## [0.5.11] - 2026-04-29
 
 ### Fixed

@@ -1,7 +1,6 @@
-import { existsSync } from "fs";
+import { closeSync, existsSync, fstatSync, openSync, readSync } from "fs";
 import { homedir } from "os";
 import { join } from "path";
-import sqlite3 from "sqlite3";
 
 export type UsagePayload = {
   includedRequests: { used: number; limit: number };
@@ -53,34 +52,275 @@ type AuthInfo = { userId: string; sessionToken: string; email: string | null };
 
 let cachedAuth: { info: AuthInfo | null; ts: number } = { info: null, ts: 0 };
 const AUTH_CACHE_TTL = 10_000;
+const FETCH_TIMEOUT_MS = 15_000;
+const MAX_USAGE_EVENT_PAGES = 10;
 
-function readCursorDbValue(dbPath: string, key: string): Promise<string | null> {
-  return new Promise((resolve, reject) => {
-    const db = new sqlite3.Database(dbPath, sqlite3.OPEN_READONLY, (openErr) => {
-      if (openErr) {
-        reject(openErr);
-        return;
-      }
+const CURSOR_AUTH_KEYS = ["cursorAuth/accessToken", "cursorAuth/cachedEmail"] as const;
+type CursorAuthKey = (typeof CURSOR_AUTH_KEYS)[number];
+type CursorAuthValues = Partial<Record<CursorAuthKey, string>>;
 
-      db.get(
-        "SELECT value FROM ItemTable WHERE key = ?",
-        [key],
-        (queryErr: Error | null, row: { value?: string } | undefined) => {
-          db.close((closeErr) => {
-            if (queryErr) {
-              reject(queryErr);
-              return;
-            }
-            if (closeErr) {
-              reject(closeErr);
-              return;
-            }
-            resolve(typeof row?.value === "string" ? row.value : null);
-          });
-        },
-      );
-    });
+type Varint = { value: number; nextOffset: number };
+type SqliteValue = number | string | null;
+type DecodedField = { value: SqliteValue; byteLength: number };
+type WalIndex = { fd: number; pages: Map<number, number> };
+
+function decodeVarint(buffer: Buffer, offset: number, limit = buffer.length): Varint | null {
+  let value = 0;
+  for (let i = 0; i < 8 && offset + i < limit; i++) {
+    const byte = buffer[offset + i];
+    if (byte === undefined) return null;
+    value = value * 128 + (byte & 0x7f);
+    if ((byte & 0x80) === 0) {
+      return { value, nextOffset: offset + i + 1 };
+    }
+  }
+
+  if (offset + 8 < limit) {
+    const byte = buffer[offset + 8];
+    return byte === undefined ? null : { value: value * 256 + byte, nextOffset: offset + 9 };
+  }
+  return null;
+}
+
+function sqliteFieldByteLength(serialType: number): number | null {
+  if (serialType === 0 || serialType === 8 || serialType === 9) return 0;
+  if (serialType >= 1 && serialType <= 4) return serialType;
+  if (serialType === 5) return 6;
+  if (serialType === 6 || serialType === 7) return 8;
+  if (serialType >= 12) return Math.floor((serialType - 12) / 2);
+  return null;
+}
+
+function readSignedInt(buffer: Buffer, offset: number, byteLength: number): number | null {
+  if (byteLength === 0) return 0;
+  if (offset + byteLength > buffer.length) return null;
+
+  let value = 0;
+  for (let i = 0; i < byteLength; i++) {
+    const byte = buffer[offset + i];
+    if (byte === undefined) return null;
+    value = value * 256 + byte;
+  }
+
+  const signBit = 2 ** (byteLength * 8 - 1);
+  return value >= signBit ? value - 2 ** (byteLength * 8) : value;
+}
+
+function readSqliteField(buffer: Buffer, offset: number, serialType: number): DecodedField | null {
+  const byteLength = sqliteFieldByteLength(serialType);
+  if (byteLength === null || offset + byteLength > buffer.length) return null;
+  if (serialType === 0) return { value: null, byteLength };
+  if (serialType === 8) return { value: 0, byteLength };
+  if (serialType === 9) return { value: 1, byteLength };
+  if (serialType >= 1 && serialType <= 6) {
+    const value = readSignedInt(buffer, offset, byteLength);
+    return value === null ? null : { value, byteLength };
+  }
+  if (serialType === 7) return { value: null, byteLength };
+  if (serialType % 2 === 0) return { value: null, byteLength };
+  return {
+    value: buffer.toString("utf8", offset, offset + byteLength),
+    byteLength,
+  };
+}
+
+function readSqliteRecord(page: Buffer, payloadOffset: number, payloadSize: number): SqliteValue[] | null {
+  if (payloadOffset + payloadSize > page.length) return null;
+
+  const headerSizeVarint = decodeVarint(page, payloadOffset, payloadOffset + payloadSize);
+  if (!headerSizeVarint) return null;
+
+  const headerEnd = payloadOffset + headerSizeVarint.value;
+  if (headerEnd > payloadOffset + payloadSize) return null;
+
+  const serialTypes: number[] = [];
+  let serialOffset = headerSizeVarint.nextOffset;
+  while (serialOffset < headerEnd) {
+    const serialType = decodeVarint(page, serialOffset, headerEnd);
+    if (!serialType) return null;
+    serialTypes.push(serialType.value);
+    serialOffset = serialType.nextOffset;
+  }
+
+  const values: SqliteValue[] = [];
+  let fieldOffset = headerEnd;
+  for (const serialType of serialTypes) {
+    const field = readSqliteField(page, fieldOffset, serialType);
+    if (!field) return null;
+    values.push(field.value);
+    fieldOffset += field.byteLength;
+  }
+  return values;
+}
+
+function readTableLeafRecord(page: Buffer, cellOffset: number): SqliteValue[] | null {
+  if (cellOffset >= page.length) return null;
+  const payloadSize = decodeVarint(page, cellOffset);
+  if (!payloadSize) return null;
+
+  const rowId = decodeVarint(page, payloadSize.nextOffset);
+  if (!rowId) return null;
+
+  return readSqliteRecord(page, rowId.nextOffset, payloadSize.value);
+}
+
+function readItemTableLeafCell(page: Buffer, cellOffset: number): [string, string] | null {
+  const record = readTableLeafRecord(page, cellOffset);
+  if (!record || record.length < 2) return null;
+
+  const [key, value] = record;
+  return typeof key === "string" && typeof value === "string" ? [key, value] : null;
+}
+
+function getSqlitePageSize(header: Buffer, walPageSize?: number): number {
+  if (walPageSize && walPageSize > 0) return walPageSize;
+
+  const pageSize = header.readUInt16BE(16);
+  return pageSize === 1 ? 65_536 : pageSize;
+}
+
+function indexWalFile(dbPath: string, pageSize: number): WalIndex | null {
+  const walPath = `${dbPath}-wal`;
+  if (!existsSync(walPath)) return null;
+
+  const fd = openSync(walPath, "r");
+  const size = fstatSync(fd).size;
+  if (size < 32) return { fd, pages: new Map() };
+
+  const header = Buffer.alloc(32);
+  readSync(fd, header, 0, header.length, 0);
+  const magic = header.readUInt32BE(0);
+  if (magic !== 0x377f0682 && magic !== 0x377f0683) {
+    closeSync(fd);
+    return null;
+  }
+
+  const pages = new Map<number, number>();
+  const frameSize = 24 + pageSize;
+  for (let frameOffset = 32; frameOffset + frameSize <= size; frameOffset += frameSize) {
+    const frameHeader = Buffer.alloc(4);
+    readSync(fd, frameHeader, 0, frameHeader.length, frameOffset);
+    const pageNumber = frameHeader.readUInt32BE(0);
+    if (pageNumber > 0) {
+      pages.set(pageNumber, frameOffset + 24);
+    }
+  }
+
+  return { fd, pages };
+}
+
+function getCellPointerOffset(pageType: number, btreeHeaderOffset: number): number {
+  return btreeHeaderOffset + (pageType === 0x05 ? 12 : 8);
+}
+
+function readPage(
+  dbFd: number,
+  walIndex: WalIndex | null,
+  pageNumber: number,
+  pageSize: number,
+): Buffer | null {
+  const page = Buffer.alloc(pageSize);
+  const walOffset = walIndex?.pages.get(pageNumber);
+  const bytesRead = walOffset === undefined || !walIndex
+    ? readSync(dbFd, page, 0, pageSize, (pageNumber - 1) * pageSize)
+    : readSync(walIndex.fd, page, 0, pageSize, walOffset);
+
+  if (bytesRead <= 0) return null;
+  return bytesRead === pageSize ? page : page.subarray(0, bytesRead);
+}
+
+function collectTableLeafRecords(
+  readDbPage: (pageNumber: number) => Buffer | null,
+  rootPage: number,
+  onRecord: (record: SqliteValue[]) => boolean,
+  seenPages = new Set<number>(),
+): void {
+  if (seenPages.has(rootPage)) return;
+  seenPages.add(rootPage);
+
+  const page = readDbPage(rootPage);
+  if (!page) return;
+
+  const btreeHeaderOffset = rootPage === 1 ? 100 : 0;
+  const pageType = page[btreeHeaderOffset];
+  if (pageType !== 0x05 && pageType !== 0x0d) return;
+
+  const cellCount = page.readUInt16BE(btreeHeaderOffset + 3);
+  const cellPointerOffset = getCellPointerOffset(pageType, btreeHeaderOffset);
+
+  if (pageType === 0x05) {
+    for (let i = 0; i < cellCount; i++) {
+      const pointerOffset = cellPointerOffset + i * 2;
+      if (pointerOffset + 2 > page.length) break;
+      const cellOffset = page.readUInt16BE(pointerOffset);
+      if (cellOffset + 4 > page.length) continue;
+      collectTableLeafRecords(readDbPage, page.readUInt32BE(cellOffset), onRecord, seenPages);
+    }
+
+    const rightMostPage = page.readUInt32BE(btreeHeaderOffset + 8);
+    collectTableLeafRecords(readDbPage, rightMostPage, onRecord, seenPages);
+    return;
+  }
+
+  for (let i = 0; i < cellCount; i++) {
+    const pointerOffset = cellPointerOffset + i * 2;
+    if (pointerOffset + 2 > page.length) break;
+    const record = readTableLeafRecord(page, page.readUInt16BE(pointerOffset));
+    if (record && !onRecord(record)) return;
+  }
+}
+
+function findItemTableRootPage(readDbPage: (pageNumber: number) => Buffer | null): number | null {
+  let rootPage: number | null = null;
+  collectTableLeafRecords(readDbPage, 1, (record) => {
+    const [type, name, , page] = record;
+    if (type === "table" && name === "ItemTable" && typeof page === "number" && page > 0) {
+      rootPage = page;
+      return false;
+    }
+    return true;
   });
+  return rootPage;
+}
+
+export function readCursorAuthValuesFromDb(dbPath: string): CursorAuthValues {
+  const fd = openSync(dbPath, "r");
+  let walIndex: WalIndex | null = null;
+  try {
+    const header = Buffer.alloc(100);
+    readSync(fd, header, 0, header.length, 0);
+
+    if (header.toString("utf8", 0, 16) !== "SQLite format 3\0") {
+      throw new Error("Invalid SQLite database header");
+    }
+
+    const pageSize = getSqlitePageSize(header);
+    walIndex = indexWalFile(dbPath, pageSize);
+    const readDbPage = (pageNumber: number) => readPage(fd, walIndex, pageNumber, pageSize);
+    const itemTableRootPage = findItemTableRootPage(readDbPage);
+    if (itemTableRootPage === null) {
+      throw new Error("Could not find ItemTable root page");
+    }
+
+    const remainingKeys = new Set<CursorAuthKey>(CURSOR_AUTH_KEYS);
+    const values: CursorAuthValues = {};
+
+    collectTableLeafRecords(readDbPage, itemTableRootPage, (record) => {
+      if (record.length < 2) return true;
+      const [key, value] = record;
+      if (typeof key === "string" && typeof value === "string" && remainingKeys.has(key as CursorAuthKey)) {
+        const authKey = key as CursorAuthKey;
+        values[authKey] = value;
+        remainingKeys.delete(authKey);
+      }
+      return remainingKeys.size > 0;
+    });
+
+    return values;
+  } finally {
+    if (walIndex) closeSync(walIndex.fd);
+    closeSync(fd);
+  }
 }
 
 async function getCursorToken(): Promise<AuthInfo | null> {
@@ -97,15 +337,16 @@ async function getCursorToken(): Promise<AuthInfo | null> {
     return null;
   }
 
-  let jwt: string | null = null;
+  let authValues: CursorAuthValues;
   try {
-    jwt = await readCursorDbValue(dbPath, "cursorAuth/accessToken");
+    authValues = readCursorAuthValuesFromDb(dbPath);
   } catch (error) {
     const msg = error instanceof Error ? error.message : String(error);
     log(`Could not read accessToken from database: ${msg}`);
     return null;
   }
 
+  const jwt = authValues["cursorAuth/accessToken"] ?? null;
   if (!jwt) {
     log("No accessToken found in database");
     return null;
@@ -116,13 +357,8 @@ async function getCursorToken(): Promise<AuthInfo | null> {
   const userId: string = payload.sub.split("|")[1];
   log(`Parsed userId: ${userId}`);
 
-  let email: string | null = null;
-  try {
-    email = await readCursorDbValue(dbPath, "cursorAuth/cachedEmail");
-    log(`Cached email: ${email}`);
-  } catch {
-    log("Could not read cachedEmail from database");
-  }
+  const email = authValues["cursorAuth/cachedEmail"] ?? null;
+  log(`Cached email: ${email}`);
 
   const info = { userId, sessionToken: `${userId}%3A%3A${jwt}`, email };
   cachedAuth = { info, ts: Date.now() };
@@ -149,6 +385,10 @@ type NumberWithSource = { value: number; source: string };
 
 function asRecord(value: unknown): Record<string, unknown> | null {
   return typeof value === "object" && value !== null ? (value as Record<string, unknown>) : null;
+}
+
+function withTimeout(init: RequestInit = {}): RequestInit {
+  return { ...init, signal: AbortSignal.timeout(FETCH_TIMEOUT_MS) };
 }
 
 function toNumber(value: unknown): number | null {
@@ -179,13 +419,14 @@ function extractBucketTotals(bucket: Record<string, unknown>, source: string): R
 
 function pickBestTotals(candidates: RequestTotals[]): RequestTotals | null {
   if (candidates.length === 0) return null;
-  return [...candidates].sort((a, b) => {
+  const [best] = [...candidates].sort((a, b) => {
     const aScore = Number(a.limit > 0) + Number(a.used > 0);
     const bScore = Number(b.limit > 0) + Number(b.used > 0);
     if (aScore !== bScore) return bScore - aScore;
     if (a.limit !== b.limit) return b.limit - a.limit;
     return b.used - a.used;
-  })[0];
+  });
+  return best ?? null;
 }
 
 function extractUsageTotals(usageRaw: unknown): RequestTotals {
@@ -296,8 +537,8 @@ async function ensureSetup(
 
   log("Running one-time setup (stripe + usage)...");
   const [stripeRes, usageRes] = await Promise.all([
-    fetch("https://cursor.com/api/auth/stripe", { headers }),
-    fetch(`https://cursor.com/api/usage?user=${userId}`, { headers }),
+    fetch("https://cursor.com/api/auth/stripe", withTimeout({ headers })),
+    fetch(`https://cursor.com/api/usage?user=${userId}`, withTimeout({ headers })),
   ]);
 
   log(`Setup: Stripe ${stripeRes.status}, Usage ${usageRes.status}`);
@@ -347,12 +588,12 @@ async function fetchTeamUsage(
   setup: SetupCache,
 ): Promise<UsagePayload | null> {
   const [teamSpendRes, usageRes] = await Promise.all([
-    fetch("https://cursor.com/api/dashboard/get-team-spend", {
+    fetch("https://cursor.com/api/dashboard/get-team-spend", withTimeout({
       method: "POST",
       headers,
       body: JSON.stringify({ teamId: setup.teamId }),
-    }),
-    fetch(`https://cursor.com/api/usage?user=${auth.userId}`, { headers }),
+    })),
+    fetch(`https://cursor.com/api/usage?user=${auth.userId}`, withTimeout({ headers })),
   ]);
 
   if (!teamSpendRes.ok) {
@@ -369,16 +610,21 @@ async function fetchTeamUsage(
   }
 
   const data = await teamSpendRes.json();
-  const members: any[] = data.teamMemberSpend ?? [];
-  const me = members.find((m: any) => m.email === auth.email || String(m.userId) === auth.userId);
+  const dataRecord = asRecord(data) ?? {};
+  const members: unknown[] = Array.isArray(dataRecord.teamMemberSpend) ? dataRecord.teamMemberSpend : [];
+  const me = members.find((member) => {
+    const record = asRecord(member);
+    return record && (record.email === auth.email || String(record.userId) === auth.userId);
+  });
 
   if (!me) {
     log(`Could not find current user in team spend (email=${auth.email}, userId=${auth.userId})`);
     return null;
   }
 
-  const resetsAt = data.nextCycleStart
-    ? new Date(Number(data.nextCycleStart)).toISOString()
+  const nextCycleStart = toNumber(dataRecord.nextCycleStart);
+  const resetsAt = nextCycleStart !== null
+    ? new Date(nextCycleStart).toISOString()
     : null;
 
   const meRecord = asRecord(me) ?? {};
@@ -437,7 +683,7 @@ async function fetchSoloUsage(
   headers: ReturnType<typeof cursorHeaders>,
   setup: SetupCache,
 ): Promise<UsagePayload | null> {
-  const res = await fetch(`https://cursor.com/api/usage?user=${auth.userId}`, { headers });
+  const res = await fetch(`https://cursor.com/api/usage?user=${auth.userId}`, withTimeout({ headers }));
 
   if (!res.ok) {
     log(`Usage API failed: ${res.status}`);
@@ -498,11 +744,11 @@ async function resolveDashboardUserId(
     return null;
   }
 
-  const res = await fetch("https://cursor.com/api/dashboard/get-team-spend", {
+  const res = await fetch("https://cursor.com/api/dashboard/get-team-spend", withTimeout({
     method: "POST",
     headers,
     body: JSON.stringify({ teamId: setup.teamId }),
-  });
+  }));
   if (!res.ok) {
     log(`get-team-spend failed while resolving dashboard user id: ${res.status}`);
     return null;
@@ -556,7 +802,7 @@ export async function fetchDailySpendByCategory(): Promise<DailySpendRow[]> {
 
   const periodEndMs = Date.now();
   const periodStartMs = periodEndMs - 31 * 86_400_000;
-  const res = await fetch("https://cursor.com/api/dashboard/get-daily-spend-by-category", {
+  const res = await fetch("https://cursor.com/api/dashboard/get-daily-spend-by-category", withTimeout({
     method: "POST",
     headers,
     body: JSON.stringify({
@@ -567,7 +813,7 @@ export async function fetchDailySpendByCategory(): Promise<DailySpendRow[]> {
       groupBy: 1,
       spendType: 1,
     }),
-  });
+  }));
 
   if (!res.ok) {
     log(`get-daily-spend-by-category failed: ${res.status}`);
@@ -611,8 +857,8 @@ export async function fetchUsageEvents(): Promise<UsageEvent[]> {
   let page = 1;
   const allEvents: UsageEvent[] = [];
 
-  while (true) {
-    const res = await fetch("https://cursor.com/api/dashboard/get-filtered-usage-events", {
+  while (page <= MAX_USAGE_EVENT_PAGES) {
+    const res = await fetch("https://cursor.com/api/dashboard/get-filtered-usage-events", withTimeout({
       method: "POST",
       headers,
       body: JSON.stringify({
@@ -622,7 +868,7 @@ export async function fetchUsageEvents(): Promise<UsageEvent[]> {
         page,
         pageSize,
       }),
-    });
+    }));
 
     if (!res.ok) {
       log(`get-filtered-usage-events failed: ${res.status}`);
@@ -630,14 +876,16 @@ export async function fetchUsageEvents(): Promise<UsageEvent[]> {
     }
 
     const data = await res.json();
-    const events: any[] = data.usageEventsDisplay ?? [];
+    const dataRecord = asRecord(data) ?? {};
+    const events: unknown[] = Array.isArray(dataRecord.usageEventsDisplay) ? dataRecord.usageEventsDisplay : [];
 
     if (page === 1) {
-      log(`Total usage events available: ${data.totalUsageEventsCount ?? "unknown"}`);
+      log(`Total usage events available: ${dataRecord.totalUsageEventsCount ?? "unknown"}`);
     }
 
-    for (const e of events) {
-      const tok = e.tokenUsage ?? {};
+    for (const event of events) {
+      const e = asRecord(event) ?? {};
+      const tok = asRecord(e.tokenUsage) ?? {};
       const totalTokens =
         (toNumber(tok.inputTokens) ?? 0) +
         (toNumber(tok.outputTokens) ?? 0) +
@@ -649,8 +897,8 @@ export async function fetchUsageEvents(): Promise<UsageEvent[]> {
 
       allEvents.push({
         timestamp: toNumber(e.timestamp) ?? 0,
-        model: e.model ?? "unknown",
-        kind: parseEventKind(e.kind ?? ""),
+        model: typeof e.model === "string" ? e.model : "unknown",
+        kind: parseEventKind(typeof e.kind === "string" ? e.kind : ""),
         totalTokens,
         requests,
         spendCents,
@@ -662,6 +910,10 @@ export async function fetchUsageEvents(): Promise<UsageEvent[]> {
     page++;
   }
 
-  log(`Fetched ${allEvents.length} usage events across ${page} page(s)`);
+  if (page > MAX_USAGE_EVENT_PAGES) {
+    log(`Stopped usage events fetch after ${MAX_USAGE_EVENT_PAGES} page(s)`);
+  }
+
+  log(`Fetched ${allEvents.length} usage events across ${Math.min(page, MAX_USAGE_EVENT_PAGES)} page(s)`);
   return allEvents;
 }

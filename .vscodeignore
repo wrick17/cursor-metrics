@@ -11,3 +11,4 @@ tsconfig.json
 bun.lock
 build/
 scripts/
+node-compile-cache/

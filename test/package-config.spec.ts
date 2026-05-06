@@ -1,4 +1,5 @@
 import { describe, expect, it } from "bun:test";
+import { readFileSync } from "fs";
 import packageJson from "../package.json";
 
 describe("package configuration", () => {
@@ -38,5 +39,17 @@ describe("package configuration", () => {
 
     expect(hideZeroTokenConfig.default).toBe(false);
     expect(hideZeroTokenConfig.type).toBe("boolean");
+  });
+
+  it("does not depend on external sqlite binaries or native bindings", () => {
+    const vscodeIgnore = readFileSync(".vscodeignore", "utf-8").split(/\r?\n/);
+    const esbuildConfig = readFileSync("esbuild.config.mjs", "utf-8");
+
+    expect(packageJson.dependencies).toBeUndefined();
+    expect(packageJson.scripts.package).not.toContain("--no-dependencies");
+    expect(packageJson.scripts["package:vsm"]).not.toContain("--no-dependencies");
+    expect(vscodeIgnore).toContain("node_modules/");
+    expect(vscodeIgnore).toContain("node-compile-cache/");
+    expect(esbuildConfig).toContain('external: ["vscode"]');
   });
 });

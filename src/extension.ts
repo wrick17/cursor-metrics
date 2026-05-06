@@ -128,6 +128,19 @@ function progressBarHtml(ratio: number, barWidth = 220): string {
   return `<img src="${progressBarDataUri(ratio, barWidth)}" width="${barWidth}" height="10" />`;
 }
 
+function escapeHtml(value: string): string {
+  return value.replace(/[&<>"']/g, (char) => {
+    const entities: Record<string, string> = {
+      "&": "&amp;",
+      "<": "&lt;",
+      ">": "&gt;",
+      "\"": "&quot;",
+      "'": "&#39;",
+    };
+    return entities[char] ?? char;
+  });
+}
+
 function summaryDividerHtml(height = 52): string {
   const light = isLightTheme();
   const strokeColor = light ? "rgba(0,0,0,0.12)" : "rgba(255,255,255,0.14)";
@@ -163,7 +176,7 @@ function buildModelBreakdownTableMarkdown(
   for (const row of rows) {
     lines.push(
       `  <tr>` +
-      `<td align="left">${row.model}</td>` +
+      `<td align="left">${escapeHtml(row.model)}</td>` +
       `<td align="right">${Math.round(row.requests)}</td>` +
       `<td align="right">${formatTokens(row.totalTokens)}</td>` +
       `<td align="right">${formatDollarsFromCents(row.spendCents)}</td>` +
@@ -222,7 +235,9 @@ function updateStatusBar(data: UsagePayload) {
   }
 
   const tooltip = new vscode.MarkdownString();
-  tooltip.isTrusted = true;
+  tooltip.isTrusted = {
+    enabledCommands: [OPEN_DASHBOARD_COMMAND, "cursor-usage.refresh", OPEN_DURATION_SETTING_COMMAND],
+  };
   tooltip.supportThemeIcons = true;
   tooltip.supportHtml = true;
 
@@ -315,8 +330,8 @@ async function updateUsage() {
     }
 
     DashboardPanel.currentPanel?.postState(getDashboardState());
-  } catch (err: any) {
-    const msg = err?.message ?? String(err);
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : String(err);
     log(`Error in updateUsage: ${msg}`);
     lastError = msg;
     if (!lastData) {
