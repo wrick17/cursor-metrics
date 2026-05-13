@@ -50,6 +50,7 @@ function getConfig() {
   const cfg = vscode.workspace.getConfiguration("cursorUsage");
   const modelBreakdownSortBy = cfg.get<ModelBreakdownSortBy>("modelBreakdownSortBy", "tokens");
   const modelBreakdownSortOrder = cfg.get<SortOrder>("modelBreakdownSortOrder", "desc");
+  const tooltipViewMode = cfg.get<TooltipViewMode>("tooltipViewMode", "modelBreakdown");
   return {
     pollInterval: cfg.get<number>("pollInterval", 5),
     minimalMode: cfg.get<boolean>("minimalMode", false),
@@ -58,6 +59,10 @@ function getConfig() {
     modelBreakdownSortOrder,
     excludeZeroTokenModels: cfg.get<boolean>("excludeZeroTokenModels", false),
     quotaAwareEventDisplay: cfg.get<boolean>("quotaAwareEventDisplay", true),
+    lastRequestWarnDollars: cfg.get<number>("lastRequestWarnDollars", 1),
+    lastRequestErrorDollars: cfg.get<number>("lastRequestErrorDollars", 3),
+    tooltipViewMode,
+    recentRequestsCount: cfg.get<number>("recentRequestsCount", 5),
   };
 }
 
@@ -155,6 +160,7 @@ function summaryDividerHtml(height = 52): string {
 }
 
 type OnDemandUsage = UsagePayload["onDemand"];
+type TooltipViewMode = "modelBreakdown" | "lastRequests";
 
 function buildModelBreakdownTableMarkdown(
   rows: Array<{ model: string; totalTokens: number; requests: number; spendCents: number }>,
@@ -215,12 +221,72 @@ function formatOnDemandTooltipCell(onDemand: OnDemandUsage): string {
   return `$${onDemand.spendDollars.toFixed(2)} / $${(onDemand.limitDollars ?? 0).toFixed(2)} (${pct}%)`;
 }
 
+function buildRecentRequestsTableMarkdown(events: UsageEvent[], maxRows = 5): string {
+  if (events.length === 0) {
+    return "*No recent requests available*\n\n";
+  }
+
+  const rows = [...events]
+    .sort((left, right) => right.timestamp - left.timestamp)
+    .slice(0, maxRows);
+  const lines = [
+    `<table width="100%" cellspacing="0" cellpadding="0">`,
+    `  <tr>`,
+    `    <th align="left" width="30%">Date</th>`,
+    `    <th align="left" width="40%">Model</th>`,
+    `    <th align="right" width="15%">Tokens</th>`,
+    `    <th align="right" width="15%">Price</th>`,
+    `  </tr>`,
+  ];
+
+  for (const row of rows) {
+    const timestamp = new Date(row.timestamp).toLocaleString("en-GB", {
+      month: "short",
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+      hour12: false,
+    });
+    lines.push(
+      `  <tr>`
+      + `<td align="left">${escapeHtml(timestamp)}</td>`
+      + `<td align="left">${escapeHtml(row.model)}</td>`
+      + `<td align="right">${formatTokens(row.totalTokens)}</td>`
+      + `<td align="right">${formatDollarsFromCents(row.spendCents)}</td>`
+      + `</tr>`,
+    );
+  }
+
+  lines.push(`</table>`, ``);
+  return lines.join("\n");
+}
+
+function getLatestRequestSpendCents(events: UsageEvent[] | null): number {
+  if (!events || events.length === 0) return 0;
+
+  let latest = events[0]!;
+  for (const event of events) {
+    if (event.timestamp > latest.timestamp) latest = event;
+  }
+  return latest.spendCents ?? 0;
+}
+
 function updateStatusBar(data: UsagePayload) {
   const { includedRequests, onDemand } = data;
-  const { minimalMode } = getConfig();
+  const { minimalMode, lastRequestWarnDollars, lastRequestErrorDollars } = getConfig();
 
   const premiumExhausted = includedRequests.used >= includedRequests.limit;
   const onDemandVisible = isOnDemandVisible(onDemand);
+  const latestRequestSpendCents = getLatestRequestSpendCents(lastEvents);
+  const warnThreshold = Math.max(0, Number(lastRequestWarnDollars) || 0);
+  const errorThreshold = Math.max(warnThreshold, Number(lastRequestErrorDollars) || 0);
+
+  statusBarItem.backgroundColor = undefined;
+  if (latestRequestSpendCents > errorThreshold * 100) {
+    statusBarItem.backgroundColor = new vscode.ThemeColor("statusBarItem.errorBackground");
+  } else if (latestRequestSpendCents > warnThreshold * 100) {
+    statusBarItem.backgroundColor = new vscode.ThemeColor("statusBarItem.warningBackground");
+  }
 
   if (minimalMode) {
     if (premiumExhausted && onDemandVisible) {
@@ -256,21 +322,29 @@ function updateStatusBar(data: UsagePayload) {
 
   if (lastEvents && lastEvents.length > 0) {
     const config = getConfig();
-    const usageDuration: UsageDuration = resolveConfiguredUsageDuration(config.usageDuration, Boolean(data.resetsAt));
-    const models = aggregateByModel(
-      lastEvents,
-      lastDailySpend ?? [],
-      usageDuration,
-      data.resetsAt,
-      Date.now(),
-      config.modelBreakdownSortBy,
-      config.modelBreakdownSortOrder,
-    );
-    const filteredModels = filterZeroTokenModels(models, config.excludeZeroTokenModels);
-    md += `<hr>\n\n`;
-    md += buildUsageByModelHeadingMarkdown(usageDuration);
-    const modelTableWidth = barW * 2 + 2;
-    md += buildModelBreakdownTableMarkdown(filteredModels, modelTableWidth);
+    const showRecentRequests = config.tooltipViewMode === "lastRequests";
+    const recentCount = Math.max(1, Math.min(50, Math.floor(Number(config.recentRequestsCount) || 5)));
+    if (showRecentRequests) {
+      md += `<hr>\n\n`;
+      md += `**Last ${recentCount} Requests**\n\n`;
+      md += buildRecentRequestsTableMarkdown(lastEvents, recentCount);
+    } else {
+      const usageDuration: UsageDuration = resolveConfiguredUsageDuration(config.usageDuration, Boolean(data.resetsAt));
+      const models = aggregateByModel(
+        lastEvents,
+        lastDailySpend ?? [],
+        usageDuration,
+        data.resetsAt,
+        Date.now(),
+        config.modelBreakdownSortBy,
+        config.modelBreakdownSortOrder,
+      );
+      const filteredModels = filterZeroTokenModels(models, config.excludeZeroTokenModels);
+      md += `<hr>\n\n`;
+      md += buildUsageByModelHeadingMarkdown(usageDuration);
+      const modelTableWidth = barW * 2 + 2;
+      md += buildModelBreakdownTableMarkdown(filteredModels, modelTableWidth);
+    }
   }
 
   if (data.resetsAt) {
@@ -290,6 +364,13 @@ async function updateUsage() {
   isFetching = true;
 
   statusBarItem.text = statusBarItem.text.replace("$(pulse)", "$(loading~spin)");
+  const refreshTooltip = new vscode.MarkdownString("### $(loading~spin) Refreshing usage...\n\nPlease wait.");
+  refreshTooltip.isTrusted = {
+    enabledCommands: [OPEN_DASHBOARD_COMMAND, "cursor-usage.refresh", OPEN_DURATION_SETTING_COMMAND],
+  };
+  refreshTooltip.supportThemeIcons = true;
+  refreshTooltip.supportHtml = true;
+  statusBarItem.tooltip = refreshTooltip;
   await new Promise((r) => setTimeout(r, 0));
 
   try {
@@ -433,7 +514,11 @@ export function activate(context: vscode.ExtensionContext) {
         || e.affectsConfiguration("cursorUsage.modelBreakdownSortBy")
         || e.affectsConfiguration("cursorUsage.modelBreakdownSortOrder")
         || e.affectsConfiguration("cursorUsage.excludeZeroTokenModels")
-        || e.affectsConfiguration("cursorUsage.quotaAwareEventDisplay"))
+        || e.affectsConfiguration("cursorUsage.quotaAwareEventDisplay")
+        || e.affectsConfiguration("cursorUsage.lastRequestWarnDollars")
+        || e.affectsConfiguration("cursorUsage.lastRequestErrorDollars")
+        || e.affectsConfiguration("cursorUsage.tooltipViewMode")
+        || e.affectsConfiguration("cursorUsage.recentRequestsCount"))
     ) {
       updateStatusBar(lastData);
       DashboardPanel.currentPanel?.postState(getDashboardState());

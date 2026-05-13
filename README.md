@@ -2,9 +2,9 @@
 
 See Cursor usage in your status bar: included requests and on-demand spend, live while you work. Click the status bar item to open a full dashboard inside your editor.
 
-![Cursor Usage extension tooltip](media/extensions-tooltip.png)
+![Cursor Usage extension tooltip](https://github.com/wrick17/cursor-metrics/raw/HEAD/media/extensions-tooltip.png)
 
-![Cursor Usage dashboard](media/extensions-dashboard.png)
+![Cursor Usage dashboard](https://github.com/wrick17/cursor-metrics/raw/HEAD/media/extensions-dashboard.png)
 
 ## What you get
 
