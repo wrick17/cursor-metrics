@@ -261,14 +261,14 @@ function buildRecentRequestsTableMarkdown(events: UsageEvent[], maxRows = 5): st
   return lines.join("\n");
 }
 
-function getLatestRequestSpendCents(events: UsageEvent[] | null): number {
-  if (!events || events.length === 0) return 0;
-
-  let latest = events[0]!;
+function getLatestUsageEvent(events: UsageEvent[] | null): UsageEvent | null {
+  if (!events || events.length === 0) return null;
+  let latest: UsageEvent | null = null;
   for (const event of events) {
-    if (event.timestamp > latest.timestamp) latest = event;
+    if (event.timestamp <= 0) continue;
+    if (!latest || event.timestamp > latest.timestamp) latest = event;
   }
-  return latest.spendCents ?? 0;
+  return latest;
 }
 
 function updateStatusBar(data: UsagePayload) {
@@ -277,7 +277,9 @@ function updateStatusBar(data: UsagePayload) {
 
   const premiumExhausted = includedRequests.used >= includedRequests.limit;
   const onDemandVisible = isOnDemandVisible(onDemand);
-  const latestRequestSpendCents = getLatestRequestSpendCents(lastEvents);
+  const latestEvent = getLatestUsageEvent(lastEvents);
+  const latestRequestSpendCents = latestEvent?.spendCents ?? 0;
+  const latestCostLabel = latestEvent !== null ? formatDollarsFromCents(latestRequestSpendCents) : "";
   const warnThreshold = Math.max(0, Number(lastRequestWarnDollars) || 0);
   const errorThreshold = Math.max(warnThreshold, Number(lastRequestErrorDollars) || 0);
 
@@ -288,17 +290,19 @@ function updateStatusBar(data: UsagePayload) {
     statusBarItem.backgroundColor = new vscode.ThemeColor("statusBarItem.warningBackground");
   }
 
+  const lastReqSuffix = latestCostLabel ? ` | ${latestCostLabel}` : "";
+
   if (minimalMode) {
     if (premiumExhausted && onDemandVisible) {
-      statusBarItem.text = `$(pulse) ${formatOnDemandStatus(onDemand)}`;
+      statusBarItem.text = `$(pulse) ${formatOnDemandStatus(onDemand)}${lastReqSuffix}`;
     } else {
-      statusBarItem.text = `$(pulse) ${includedRequests.used}/${includedRequests.limit}`;
+      statusBarItem.text = `$(pulse) ${includedRequests.used}/${includedRequests.limit}${lastReqSuffix}`;
     }
   } else {
     const includedText = `${includedRequests.used}/${includedRequests.limit}`;
     statusBarItem.text = onDemandVisible
-      ? `$(pulse) ${includedText} | ${formatOnDemandStatus(onDemand)}`
-      : `$(pulse) ${includedText}`;
+      ? `$(pulse) ${includedText} | ${formatOnDemandStatus(onDemand)}${lastReqSuffix}`
+      : `$(pulse) ${includedText}${lastReqSuffix}`;
   }
 
   const tooltip = new vscode.MarkdownString();
