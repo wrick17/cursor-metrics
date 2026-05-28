@@ -1,23 +1,24 @@
 import type { UsagePayload } from "./cursor-api";
 import { getDurationLabel } from "./duration-options";
 import type { UsageDuration } from "./model-breakdown";
+import {
+  formatOnDemandBreakdownFooter,
+  formatOnDemandValue,
+  getOnDemandProgressSegments,
+  getOnDemandRatio,
+  type OnDemandUsage,
+} from "./on-demand";
 
 type IncludedRequestsUsage = UsagePayload["includedRequests"];
-type OnDemandUsage = UsagePayload["onDemand"];
 
-type ProgressBarRenderer = {
+export type ProgressBarRenderer = {
   markdown: (ratio: number) => string;
   html: (ratio: number) => string;
+  segmentedHtml?: (segments: Array<{ ratio: number; opacity: number }>) => string;
   divider: () => string;
 };
 
 export const OPEN_DURATION_SETTING_COMMAND = "cursor-usage.openDurationSetting";
-
-function getOnDemandRatio(onDemand: OnDemandUsage): number | null {
-  if (onDemand.state !== "limited") return null;
-  if (onDemand.limitDollars === null || onDemand.limitDollars <= 0) return null;
-  return onDemand.spendDollars / onDemand.limitDollars;
-}
 
 type SummaryColumn = {
   label: string;
@@ -27,13 +28,6 @@ type SummaryColumn = {
 
 function formatIncludedValue(includedRequests: IncludedRequestsUsage): string {
   return `${includedRequests.used} / ${includedRequests.limit}`;
-}
-
-function formatOnDemandValue(onDemand: OnDemandUsage): string {
-  if (onDemand.state === "unlimited") {
-    return `$${onDemand.spendDollars.toFixed(2)}`;
-  }
-  return `$${onDemand.spendDollars.toFixed(2)} / $${(onDemand.limitDollars ?? 0).toFixed(2)}`;
 }
 
 function buildSummaryTable(columns: SummaryColumn[], renderProgressBar: ProgressBarRenderer): string {
@@ -58,6 +52,23 @@ function buildSummaryTable(columns: SummaryColumn[], renderProgressBar: Progress
   ].join("\n");
 }
 
+function renderOnDemandFooter(onDemand: OnDemandUsage, renderProgressBar: ProgressBarRenderer): string {
+  const segments = getOnDemandProgressSegments(onDemand);
+  if (segments && renderProgressBar.segmentedHtml) {
+    const breakdownFooter = formatOnDemandBreakdownFooter(onDemand);
+    const bar = renderProgressBar.segmentedHtml(segments);
+    return breakdownFooter
+      ? `${bar}<br/><sub>${breakdownFooter}</sub>`
+      : bar;
+  }
+
+  const spendRatio = getOnDemandRatio(onDemand);
+  if (spendRatio === null) {
+    return "<sub>Spend unavailable</sub>";
+  }
+  return renderProgressBar.html(spendRatio);
+}
+
 function buildSummaryColumns(
   includedRequests: IncludedRequestsUsage,
   onDemand: OnDemandUsage,
@@ -75,24 +86,25 @@ function buildSummaryColumns(
   }
 
   if (onDemand.state === "unlimited") {
+    const segments = getOnDemandProgressSegments(onDemand);
     return [
       includedColumn,
       {
         label: "On-demand",
         value: formatOnDemandValue(onDemand),
-        footer: "<sub>Unlimited</sub>",
+        footer: segments
+          ? renderOnDemandFooter(onDemand, renderProgressBar)
+          : "<sub>No limit</sub>",
       },
     ];
   }
-
-  const spendRatio = getOnDemandRatio(onDemand);
 
   return [
     includedColumn,
     {
       label: "On-demand",
       value: formatOnDemandValue(onDemand),
-      footer: spendRatio === null ? "<sub>Spend unavailable</sub>" : renderProgressBar.html(spendRatio),
+      footer: renderOnDemandFooter(onDemand, renderProgressBar),
     },
   ];
 }

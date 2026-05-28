@@ -183,6 +183,21 @@ label select { color: var(--input-fg); }
   opacity: 0.85;
   transition: width 200ms ease;
 }
+.progress-stacked {
+  display: flex;
+}
+.progress-stacked .segment-you,
+.progress-stacked .segment-others {
+  height: 100%;
+  background: var(--fg);
+  transition: width 200ms ease;
+}
+.progress-stacked .segment-you {
+  opacity: 0.9;
+}
+.progress-stacked .segment-others {
+  opacity: 0.45;
+}
 
 .controls {
   display: flex;

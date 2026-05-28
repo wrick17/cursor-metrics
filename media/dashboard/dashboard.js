@@ -123,6 +123,112 @@
     return "$" + (n || 0).toFixed(2);
   }
 
+  function formatOnDemandFooter(onDemand) {
+    const breakdown = onDemand.breakdown;
+    if (!breakdown) {
+      return onDemand.state === "unlimited" ? "No limit" : "Pay for extra usage beyond your plan limits";
+    }
+    if (onDemand.onDemandEnabled === false) {
+      const leftTotal = "Left $0.00 / $0.00";
+      if (breakdown.isTeamPool) {
+        return "Team " + formatDollars(breakdown.othersSpendDollars) + " · " + leftTotal;
+      }
+      return leftTotal;
+    }
+    if (onDemand.state === "unlimited") {
+      if (breakdown.isTeamPool) {
+        return "Team " + formatDollars(breakdown.othersSpendDollars) + " · No limit";
+      }
+      return "No limit";
+    }
+    if (onDemand.state !== "limited") {
+      return "Pay for extra usage beyond your plan limits";
+    }
+    const limit = onDemand.limitDollars || 0;
+    const leftTotal = "Left " + formatDollars(breakdown.remainingDollars) + " / " + formatDollars(limit);
+    if (breakdown.isTeamPool) {
+      return "Team " + formatDollars(breakdown.othersSpendDollars) + " · " + leftTotal;
+    }
+    return leftTotal;
+  }
+
+  function formatOnDemandValue(onDemand) {
+    const mySpend = breakdownMySpend(onDemand);
+    if (
+      onDemand.state === "unlimited" ||
+      onDemand.onDemandEnabled === false ||
+      (onDemand.breakdown && onDemand.breakdown.isTeamPool)
+    ) {
+      return formatDollars(mySpend);
+    }
+    return formatDollars(mySpend) + " / " + formatDollars(onDemand.limitDollars || 0);
+  }
+
+  function breakdownMySpend(onDemand) {
+    if (onDemand.breakdown && typeof onDemand.breakdown.mySpendDollars === "number") {
+      return onDemand.breakdown.mySpendDollars;
+    }
+    return onDemand.spendDollars || 0;
+  }
+
+  function renderOnDemandProgress(onDemand) {
+    const limit = onDemand.limitDollars || 0;
+    const breakdown = onDemand.breakdown;
+
+    if (onDemand.state === "unlimited" && breakdown) {
+      const totalSpend = breakdown.totalSpendDollars || 0;
+      if (totalSpend <= 0) {
+        return '<div class="progress"><div style="width:0%"></div></div>';
+      }
+      const youPct = Math.round((breakdown.mySpendDollars / totalSpend) * 100);
+      const othersPct = Math.round((breakdown.othersSpendDollars / totalSpend) * 100);
+      let html = '<div class="progress progress-stacked">';
+      if (youPct > 0) html += '<div class="segment-you" style="width:' + youPct + '%"></div>';
+      if (othersPct > 0) html += '<div class="segment-others" style="width:' + othersPct + '%"></div>';
+      return html + "</div>";
+    }
+
+    if (limit <= 0) {
+      const totalSpend = breakdown
+        ? breakdown.totalSpendDollars
+        : onDemand.spendDollars || 0;
+      if (totalSpend <= 0) {
+        return '<div class="progress"><div style="width:0%"></div></div>';
+      }
+      if (!breakdown) {
+        return '<div class="progress"><div style="width:100%"></div></div>';
+      }
+      const youPct = Math.round((breakdown.mySpendDollars / totalSpend) * 100);
+      const othersPct = Math.round((breakdown.othersSpendDollars / totalSpend) * 100);
+      let html = '<div class="progress progress-stacked">';
+      if (youPct > 0) html += '<div class="segment-you" style="width:' + youPct + '%"></div>';
+      if (othersPct > 0) html += '<div class="segment-others" style="width:' + othersPct + '%"></div>';
+      return html + "</div>";
+    }
+
+    if (!breakdown) {
+      const ratio = Math.min(1, breakdownMySpend(onDemand) / limit);
+      return '<div class="progress"><div style="width:' + Math.round(ratio * 100) + '%"></div></div>';
+    }
+
+    const totalSpend = breakdown.totalSpendDollars || 0;
+    const scale = limit > 0 && totalSpend > limit ? totalSpend : limit > 0 ? limit : totalSpend;
+    if (scale <= 0) {
+      return '<div class="progress"><div style="width:0%"></div></div>';
+    }
+    const youPct = Math.round((breakdown.mySpendDollars / scale) * 100);
+    const othersPct = Math.round((breakdown.othersSpendDollars / scale) * 100);
+    let html = '<div class="progress progress-stacked">';
+    if (youPct > 0) {
+      html += '<div class="segment-you" style="width:' + youPct + '%"></div>';
+    }
+    if (othersPct > 0) {
+      html += '<div class="segment-others" style="width:' + othersPct + '%"></div>';
+    }
+    html += "</div>";
+    return html;
+  }
+
   function toMillis(ts) {
     if (typeof ts === "number") return ts;
     if (typeof ts === "string" && ts !== "") {
@@ -191,21 +297,23 @@
     );
 
     if (onDemand.state !== "disabled") {
-      let valText, footerText, ratio;
+      let valText, footerText, progressHtml;
       if (onDemand.state === "unlimited") {
-        valText = formatDollars(onDemand.spendDollars);
-        footerText = "Unlimited";
-        ratio = 0;
+        valText = formatOnDemandValue(onDemand);
+        progressHtml = onDemand.breakdown
+          ? renderOnDemandProgress(onDemand)
+          : '<div class="progress"><div style="width:0%"></div></div>';
+        footerText = formatOnDemandFooter(onDemand);
       } else {
-        valText = formatDollars(onDemand.spendDollars) + " / " + formatDollars(onDemand.limitDollars || 0);
-        ratio = onDemand.limitDollars > 0 ? Math.min(1, onDemand.spendDollars / onDemand.limitDollars) : 0;
-        footerText = "Pay for extra usage beyond your plan limits";
+        valText = formatOnDemandValue(onDemand);
+        progressHtml = renderOnDemandProgress(onDemand);
+        footerText = formatOnDemandFooter(onDemand);
       }
       parts.push(
         '<div class="card">' +
           '<div class="card-label">On-Demand Usage</div>' +
           '<div class="card-value">' + valText + "</div>" +
-          '<div class="progress"><div style="width:' + Math.round(ratio * 100) + '%"></div></div>' +
+          progressHtml +
           '<div class="card-footer">' + footerText + "</div>" +
         "</div>"
       );

@@ -12,7 +12,7 @@ describe("buildUsageOverviewMarkdown", () => {
     const markdown = buildUsageOverviewMarkdown(
       {
         includedRequests: { used: 500, limit: 500 },
-        onDemand: { state: "limited", spendDollars: 66.89, limitDollars: 200 },
+        onDemand: { state: "limited", onDemandEnabled: true, spendDollars: 66.89, limitDollars: 200 },
       },
       progressBar,
     );
@@ -36,7 +36,7 @@ describe("buildUsageOverviewMarkdown", () => {
     const markdown = buildUsageOverviewMarkdown(
       {
         includedRequests: { used: 500, limit: 500 },
-        onDemand: { state: "unlimited", spendDollars: 66.89, limitDollars: null },
+        onDemand: { state: "unlimited", onDemandEnabled: true, spendDollars: 66.89, limitDollars: null },
       },
       progressBar,
     );
@@ -47,11 +47,11 @@ describe("buildUsageOverviewMarkdown", () => {
     expect(markdown).toContain("<strong>500 / 500</strong>");
     expect(markdown).toContain("<strong>$66.89</strong>");
     expect(markdown).toContain("<bar:1.00>");
-    expect(markdown).toContain("<tr><td><bar:1.00></td><td><sub>Unlimited</sub></td></tr>");
+    expect(markdown).toContain("<tr><td><bar:1.00></td><td><sub>No limit</sub></td></tr>");
     expect(markdown.match(/<table/g)?.length).toBe(1);
     expect(markdown).not.toContain("width=\"49%\"");
     expect(markdown).not.toContain("100% used");
-    expect(markdown).not.toContain("No spend cap");
+    expect(markdown).not.toContain("Unlimited");
     expect(markdown).not.toContain("Included Requests");
     expect(markdown).not.toContain("On-Demand Spend");
   });
@@ -60,7 +60,7 @@ describe("buildUsageOverviewMarkdown", () => {
     const markdown = buildUsageOverviewMarkdown(
       {
         includedRequests: { used: 42, limit: 500 },
-        onDemand: { state: "disabled", spendDollars: 0, limitDollars: null },
+        onDemand: { state: "disabled", onDemandEnabled: false, spendDollars: 0, limitDollars: null },
       },
       progressBar,
     );
