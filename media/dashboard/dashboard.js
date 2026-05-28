@@ -414,19 +414,6 @@
     const isSpend = local.metric === "spend";
     const yLabel = isSpend ? "Spend" : local.metric === "tokens" ? "Tokens" : "Requests";
 
-    // For each x (day), find the topmost non-zero dataset so we only round
-    // that segment's top corners. Datasets stack in order, so the "top" is
-    // the LAST non-zero dataset at that x.
-    const numX = series.labels.length;
-    const topDatasetForX = new Array(numX).fill(-1);
-    for (let i = 0; i < series.datasets.length; i++) {
-      const data = series.datasets[i].data;
-      for (let x = 0; x < numX; x++) {
-        if ((data[x] || 0) > 0) topDatasetForX[x] = i;
-      }
-    }
-
-    const RADIUS = 4;
     const chartData = {
       labels: series.labels,
       datasets: series.datasets.map((d, i) => ({
@@ -436,15 +423,6 @@
         backgroundColor: PALETTE[i % PALETTE.length],
         borderColor: PALETTE[i % PALETTE.length],
         borderWidth: 0,
-        borderSkipped: false,
-        borderRadius: (ctx) => {
-          const x = ctx.dataIndex;
-          const v = ctx.parsed && typeof ctx.parsed.y === "number" ? ctx.parsed.y : 0;
-          if (v <= 0) return 0;
-          if (topDatasetForX[x] !== i) return 0;
-          // Round only the top corners of the top segment.
-          return { topLeft: RADIUS, topRight: RADIUS, bottomLeft: 0, bottomRight: 0 };
-        },
         categoryPercentage: 0.7,
         barPercentage: 0.85,
       })),
