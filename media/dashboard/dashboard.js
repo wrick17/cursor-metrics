@@ -14,6 +14,7 @@
     tableBody: document.querySelector("#events-table tbody"),
     tableHead: document.querySelector("#events-table thead"),
     breakdownBody: document.querySelector("#breakdown-table tbody"),
+    breakdownFoot: document.querySelector("#breakdown-table tfoot"),
     breakdownHead: document.querySelector("#breakdown-table thead"),
     breakdownRangeLabel: document.getElementById("breakdown-range-label"),
     pagination: document.getElementById("pagination"),
@@ -599,6 +600,7 @@
 
     if (rows.length === 0) {
       ui.breakdownBody.innerHTML = '<tr><td colspan="4" style="text-align:center; padding:24px;" class="muted">No usage in this range</td></tr>';
+      if (ui.breakdownFoot) ui.breakdownFoot.innerHTML = "";
       return;
     }
     ui.breakdownBody.innerHTML = rows.map((r) => {
@@ -611,6 +613,25 @@
         '<td class="num">' + formatDollars(r.spendCents / 100) + '</td>' +
       '</tr>';
     }).join("");
+
+    const totals = rows.reduce(
+      (acc, r) => {
+        acc.requests += r.requests || 0;
+        acc.totalTokens += r.totalTokens || 0;
+        acc.spendCents += r.spendCents || 0;
+        return acc;
+      },
+      { requests: 0, totalTokens: 0, spendCents: 0 },
+    );
+    if (ui.breakdownFoot) {
+      ui.breakdownFoot.innerHTML =
+        '<tr class="breakdown-total">' +
+        '<td>Total</td>' +
+        '<td class="num">' + formatRequests(totals.requests) + '</td>' +
+        '<td class="num">' + formatTokens(totals.totalTokens) + '</td>' +
+        '<td class="num">' + formatDollars(totals.spendCents / 100) + '</td>' +
+        "</tr>";
+    }
   }
 
   function exportCsv() {

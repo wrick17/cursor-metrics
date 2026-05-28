@@ -184,6 +184,18 @@ function buildModelBreakdownTableMarkdown(
     );
   }
 
+  const totalRequests = rows.reduce((sum, row) => sum + row.requests, 0);
+  const totalTokens = rows.reduce((sum, row) => sum + row.totalTokens, 0);
+  const totalSpendCents = rows.reduce((sum, row) => sum + row.spendCents, 0);
+  lines.push(
+    `  <tr>` +
+    `<td align="left"><strong>Total</strong></td>` +
+    `<td align="right"><strong>${Math.round(totalRequests)}</strong></td>` +
+    `<td align="right"><strong>${formatTokens(totalTokens)}</strong></td>` +
+    `<td align="right"><strong>${formatDollarsFromCents(totalSpendCents)}</strong></td>` +
+    `</tr>`,
+  );
+
   lines.push(`</table>`, ``);
   return lines.join("\n");
 }
