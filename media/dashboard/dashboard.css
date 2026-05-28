@@ -300,6 +300,12 @@ thead th {
   padding-bottom: 6px;
 }
 tbody tr:last-child td { border-bottom: none; }
+tfoot td {
+  font-weight: 600;
+  border-top: 1px solid var(--border-strong);
+  padding-top: 10px;
+}
+tfoot tr.breakdown-total:hover { filter: none; }
 th.sortable { cursor: pointer; }
 th.sortable:hover { color: var(--fg); }
 th.sorted-asc::after { content: " ↑"; font-size: 10px; }

@@ -207,6 +207,7 @@ export class DashboardPanel {
             </tr>
           </thead>
           <tbody></tbody>
+          <tfoot></tfoot>
         </table>
       </div>
     </div>
