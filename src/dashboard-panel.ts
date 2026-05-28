@@ -1,6 +1,11 @@
 import { randomBytes } from "crypto";
 import * as vscode from "vscode";
 import type { DashboardState } from "./dashboard-state";
+import {
+  loadDashboardUiPreferences,
+  saveDashboardUiPreferences,
+  type DashboardUiPreferences,
+} from "./dashboard-ui-state";
 
 export const OPEN_DASHBOARD_COMMAND = "cursor-usage.openDashboard";
 
@@ -40,6 +45,7 @@ export class DashboardPanel {
   }
 
   private readonly panel: vscode.WebviewPanel;
+  private readonly context: vscode.ExtensionContext;
   private readonly disposables: vscode.Disposable[] = [];
 
   private constructor(
@@ -49,6 +55,7 @@ export class DashboardPanel {
     getState: StateProvider,
   ) {
     this.panel = panel;
+    this.context = context;
     this.panel.webview.html = this.renderHtml(panel.webview, context.extensionUri);
 
     this.panel.onDidDispose(() => this.dispose(), null, this.disposables);
@@ -57,8 +64,15 @@ export class DashboardPanel {
       async (msg) => {
         if (!msg || typeof msg !== "object") return;
         if (msg.type === "ready") {
+          this.postUiPreferences(loadDashboardUiPreferences(this.context));
           const state = getState();
           if (state) this.postState(state);
+        } else if (msg.type === "saveUiPreferences") {
+          const patch = msg.preferences as DashboardUiPreferences | undefined;
+          if (patch && typeof patch === "object") {
+            const saved = await saveDashboardUiPreferences(this.context, patch);
+            this.postUiPreferences(saved);
+          }
         } else if (msg.type === "refresh") {
           this.postLoading(true);
           try {
@@ -75,6 +89,10 @@ export class DashboardPanel {
 
   postState(state: DashboardState): void {
     this.panel.webview.postMessage({ type: "state", state });
+  }
+
+  postUiPreferences(preferences: DashboardUiPreferences): void {
+    this.panel.webview.postMessage({ type: "uiPreferences", preferences });
   }
 
   postLoading(on: boolean): void {

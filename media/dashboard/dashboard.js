@@ -69,6 +69,19 @@
     });
   }
 
+  function persistGlobalUi(patch) {
+    vscode.postMessage({ type: "saveUiPreferences", preferences: patch });
+  }
+
+  function applyUiPreferences(prefs) {
+    if (!prefs || typeof prefs !== "object") return;
+    if (prefs.range) local.range = prefs.range;
+    if (prefs.usageFilter) local.usageFilter = prefs.usageFilter;
+    if (prefs.metric) local.metric = prefs.metric;
+    persistLocal();
+    if (state) renderAll();
+  }
+
   function setSectionCollapsed(section, isOpen) {
     const sectionEl = document.querySelector('.collapsible-section[data-section="' + section + '"]');
     const bodyEl = document.getElementById("section-body-" + section);
@@ -714,6 +727,7 @@
   ui.usageFilter.addEventListener("change", () => {
     local.usageFilter = ui.usageFilter.value;
     persistLocal();
+    persistGlobalUi({ usageFilter: local.usageFilter });
     renderChart();
     renderBreakdown();
     renderTable();
@@ -722,6 +736,7 @@
   ui.metricFilter.addEventListener("change", () => {
     local.metric = ui.metricFilter.value;
     persistLocal();
+    persistGlobalUi({ metric: local.metric });
     renderChart();
   });
 
@@ -778,7 +793,9 @@
   window.addEventListener("message", (event) => {
     const msg = event.data;
     if (!msg || typeof msg !== "object") return;
-    if (msg.type === "state") {
+    if (msg.type === "uiPreferences") {
+      applyUiPreferences(msg.preferences);
+    } else if (msg.type === "state") {
       state = msg.state;
       renderAll();
     } else if (msg.type === "loading") {
