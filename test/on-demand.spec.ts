@@ -110,6 +110,30 @@ describe("buildOnDemandFromSpendLimit", () => {
     });
   });
 
+  it("shows pooled team limit before any spend is recorded", () => {
+    const result = buildOnDemandFromSpendLimit(
+      {
+        pooledLimit: 30_000,
+        pooledUsed: 0,
+        pooledRemaining: 30_000,
+        limitType: "team",
+      },
+      true,
+    );
+
+    expect(result.state).toBe("limited");
+    expect(result.limitDollars).toBe(300);
+    expect(result.spendDollars).toBe(0);
+    expect(result.breakdown).toEqual({
+      mySpendDollars: 0,
+      othersSpendDollars: 0,
+      totalSpendDollars: 0,
+      remainingDollars: 300,
+      isTeamPool: true,
+    });
+    expect(formatOnDemandBreakdownFooter(result)).toBe("Team $0.00 · Left $300.00 / $300.00");
+  });
+
   it("parses pooled team limits with you, team, and remaining breakdown", () => {
     const result = buildOnDemandFromSpendLimit(
       {

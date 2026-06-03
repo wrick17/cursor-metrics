@@ -199,6 +199,14 @@ export function buildOnDemandFromSpendLimit(
 
     const othersSpendDollars = Math.max(0, totalUsedDollars - mySpendDollars);
     if (totalUsedDollars <= 0 && mySpendDollars <= 0) {
+      if (pooledLimitCents !== null && pooledLimitCents > 0) {
+        const limitDollars = resolveLimitDollars(onDemandEnabled, apiPooledLimitDollars ?? 0);
+        return buildLimitedOnDemand(
+          limitDollars,
+          finalizeBreakdown(limitDollars, 0, 0, true),
+          onDemandEnabled,
+        );
+      }
       return onDemandEnabled
         ? { state: "unlimited", onDemandEnabled: true, spendDollars: 0, limitDollars: null }
         : emptyDisabled();
@@ -231,6 +239,14 @@ export function buildOnDemandFromSpendLimit(
     if (spendDollars === 0) spendDollars = myFallbackDollars;
 
     if (spendDollars <= 0) {
+      if (individualLimitCents !== null && individualLimitCents > 0) {
+        const limitDollars = resolveLimitDollars(onDemandEnabled, apiIndividualLimitDollars ?? 0);
+        return buildLimitedOnDemand(
+          limitDollars,
+          finalizeBreakdown(limitDollars, 0, 0, false),
+          onDemandEnabled,
+        );
+      }
       return onDemandEnabled
         ? { state: "unlimited", onDemandEnabled: true, spendDollars: 0, limitDollars: null }
         : emptyDisabled();
