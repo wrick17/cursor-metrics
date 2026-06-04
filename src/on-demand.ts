@@ -73,8 +73,9 @@ function buildLimitedOnDemand(
   };
 }
 
+/** Zero-cap limited state so UI can show spend with on-demand turned off. */
 function emptyDisabled(): OnDemandUsage {
-  return { state: "disabled", onDemandEnabled: false, spendDollars: 0, limitDollars: null };
+  return buildLimitedOnDemand(0, finalizeBreakdown(0, 0, 0, false), false);
 }
 
 function readOptionalCents(record: Record<string, unknown>, field: string): number | null {
@@ -369,7 +370,8 @@ export function mergeOnDemandUsage(
 }
 
 export function isOnDemandVisible(onDemand: OnDemandUsage): boolean {
-  return onDemand.state !== "disabled";
+  if (onDemand.state === "disabled") return false;
+  return true;
 }
 
 export function getOnDemandDisplaySpend(onDemand: OnDemandUsage): number {

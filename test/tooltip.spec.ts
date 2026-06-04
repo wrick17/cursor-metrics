@@ -56,22 +56,31 @@ describe("buildUsageOverviewMarkdown", () => {
     expect(markdown).not.toContain("On-Demand Spend");
   });
 
-  it("renders a single-column balanced summary when on-demand is hidden", () => {
+  it("renders on-demand at zero cap when spending is disabled", () => {
     const markdown = buildUsageOverviewMarkdown(
       {
         includedRequests: { used: 42, limit: 500 },
-        onDemand: { state: "disabled", onDemandEnabled: false, spendDollars: 0, limitDollars: null },
+        onDemand: {
+          state: "limited",
+          onDemandEnabled: false,
+          spendDollars: 0,
+          limitDollars: 0,
+          breakdown: {
+            mySpendDollars: 0,
+            othersSpendDollars: 0,
+            totalSpendDollars: 0,
+            remainingDollars: 0,
+            isTeamPool: false,
+          },
+        },
       },
       progressBar,
     );
 
-    expect(markdown).toContain("<table width=\"100%\" cellspacing=\"0\" cellpadding=\"0\">");
-    expect(markdown).toContain("<td width=\"100%\"><sub>Included</sub></td>");
-    expect(markdown).toContain("<strong>42 / 500</strong>");
-    expect(markdown).toContain("<bar:0.08>");
-    expect(markdown).not.toContain("<divider />");
-    expect(markdown).not.toContain("8% used");
-    expect(markdown).not.toContain("On-demand");
+    expect(markdown).toContain("<td><sub>On-demand</sub></td>");
+    expect(markdown).toContain("<strong>$0.00</strong>");
+    expect(markdown).toContain("<divider />");
+    expect(markdown).toContain("<sub>Left $0.00 / $0.00</sub>");
   });
 });
 

@@ -15,12 +15,19 @@ import {
 } from "../src/on-demand";
 
 describe("buildOnDemandFromSpendLimit", () => {
-  it("returns disabled when on-demand is off and there is no spend", () => {
+  it("returns a zero-cap limited state when on-demand is off and there is no spend", () => {
     expect(buildOnDemandFromSpendLimit(null, false)).toEqual({
-      state: "disabled",
+      state: "limited",
       onDemandEnabled: false,
       spendDollars: 0,
-      limitDollars: null,
+      limitDollars: 0,
+      breakdown: {
+        mySpendDollars: 0,
+        othersSpendDollars: 0,
+        totalSpendDollars: 0,
+        remainingDollars: 0,
+        isTeamPool: false,
+      },
     });
   });
 

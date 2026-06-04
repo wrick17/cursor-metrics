@@ -53,9 +53,9 @@ function buildSummaryTable(columns: SummaryColumn[], renderProgressBar: Progress
 }
 
 function renderOnDemandFooter(onDemand: OnDemandUsage, renderProgressBar: ProgressBarRenderer): string {
+  const breakdownFooter = formatOnDemandBreakdownFooter(onDemand);
   const segments = getOnDemandProgressSegments(onDemand);
   if (segments && renderProgressBar.segmentedHtml) {
-    const breakdownFooter = formatOnDemandBreakdownFooter(onDemand);
     const bar = renderProgressBar.segmentedHtml(segments);
     return breakdownFooter
       ? `${bar}<br/><sub>${breakdownFooter}</sub>`
@@ -64,7 +64,7 @@ function renderOnDemandFooter(onDemand: OnDemandUsage, renderProgressBar: Progre
 
   const spendRatio = getOnDemandRatio(onDemand);
   if (spendRatio === null) {
-    return "<sub>Spend unavailable</sub>";
+    return breakdownFooter ? `<sub>${breakdownFooter}</sub>` : "<sub>Spend unavailable</sub>";
   }
   return renderProgressBar.html(spendRatio);
 }
@@ -80,10 +80,6 @@ function buildSummaryColumns(
     value: formatIncludedValue(includedRequests),
     footer: renderProgressBar.html(reqRatio),
   };
-
-  if (onDemand.state === "disabled") {
-    return [includedColumn];
-  }
 
   if (onDemand.state === "unlimited") {
     const segments = getOnDemandProgressSegments(onDemand);

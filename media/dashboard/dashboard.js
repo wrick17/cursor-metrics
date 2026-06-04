@@ -124,6 +124,9 @@
   }
 
   function formatOnDemandFooter(onDemand) {
+    if (onDemand.onDemandEnabled === false && !onDemand.breakdown) {
+      return "Left $0.00 / $0.00";
+    }
     const breakdown = onDemand.breakdown;
     if (!breakdown) {
       return onDemand.state === "unlimited" ? "No limit" : "Pay for extra usage beyond your plan limits";
