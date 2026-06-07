@@ -12,7 +12,7 @@ describe("buildUsageOverviewMarkdown", () => {
     const markdown = buildUsageOverviewMarkdown(
       {
         includedRequests: { used: 500, limit: 500 },
-        onDemand: { state: "limited", spendDollars: 66.89, limitDollars: 200 },
+        onDemand: { state: "limited", onDemandEnabled: true, spendDollars: 66.89, limitDollars: 200 },
       },
       progressBar,
     );
@@ -36,7 +36,7 @@ describe("buildUsageOverviewMarkdown", () => {
     const markdown = buildUsageOverviewMarkdown(
       {
         includedRequests: { used: 500, limit: 500 },
-        onDemand: { state: "unlimited", spendDollars: 66.89, limitDollars: null },
+        onDemand: { state: "unlimited", onDemandEnabled: true, spendDollars: 66.89, limitDollars: null },
       },
       progressBar,
     );
@@ -47,31 +47,40 @@ describe("buildUsageOverviewMarkdown", () => {
     expect(markdown).toContain("<strong>500 / 500</strong>");
     expect(markdown).toContain("<strong>$66.89</strong>");
     expect(markdown).toContain("<bar:1.00>");
-    expect(markdown).toContain("<tr><td><bar:1.00></td><td><sub>Unlimited</sub></td></tr>");
+    expect(markdown).toContain("<tr><td><bar:1.00></td><td><sub>No limit</sub></td></tr>");
     expect(markdown.match(/<table/g)?.length).toBe(1);
     expect(markdown).not.toContain("width=\"49%\"");
     expect(markdown).not.toContain("100% used");
-    expect(markdown).not.toContain("No spend cap");
+    expect(markdown).not.toContain("Unlimited");
     expect(markdown).not.toContain("Included Requests");
     expect(markdown).not.toContain("On-Demand Spend");
   });
 
-  it("renders a single-column balanced summary when on-demand is hidden", () => {
+  it("renders on-demand at zero cap when spending is disabled", () => {
     const markdown = buildUsageOverviewMarkdown(
       {
         includedRequests: { used: 42, limit: 500 },
-        onDemand: { state: "disabled", spendDollars: 0, limitDollars: null },
+        onDemand: {
+          state: "limited",
+          onDemandEnabled: false,
+          spendDollars: 0,
+          limitDollars: 0,
+          breakdown: {
+            mySpendDollars: 0,
+            othersSpendDollars: 0,
+            totalSpendDollars: 0,
+            remainingDollars: 0,
+            isTeamPool: false,
+          },
+        },
       },
       progressBar,
     );
 
-    expect(markdown).toContain("<table width=\"100%\" cellspacing=\"0\" cellpadding=\"0\">");
-    expect(markdown).toContain("<td width=\"100%\"><sub>Included</sub></td>");
-    expect(markdown).toContain("<strong>42 / 500</strong>");
-    expect(markdown).toContain("<bar:0.08>");
-    expect(markdown).not.toContain("<divider />");
-    expect(markdown).not.toContain("8% used");
-    expect(markdown).not.toContain("On-demand");
+    expect(markdown).toContain("<td><sub>On-demand</sub></td>");
+    expect(markdown).toContain("<strong>$0.00</strong>");
+    expect(markdown).toContain("<divider />");
+    expect(markdown).toContain("<sub>Left $0.00 / $0.00</sub>");
   });
 });
 

@@ -12,7 +12,7 @@ const now = Date.UTC(2026, 3, 20, 12, 0, 0);
 
 const sampleData: UsagePayload = {
   includedRequests: { used: 100, limit: 500 },
-  onDemand: { state: "limited", spendDollars: 12.5, limitDollars: 100 },
+  onDemand: { state: "limited", onDemandEnabled: true, spendDollars: 12.5, limitDollars: 100 },
   resetsAt: null,
 };
 

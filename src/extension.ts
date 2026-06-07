@@ -24,6 +24,11 @@ import {
   type UsageDuration,
 } from "./model-breakdown";
 import {
+  formatOnDemandValue,
+  getOnDemandRatio,
+  isOnDemandVisible,
+} from "./on-demand";
+import {
   buildUsageByModelHeadingMarkdown,
   buildUsageOverviewMarkdown,
   OPEN_DURATION_SETTING_COMMAND,
@@ -129,6 +134,41 @@ function progressBarHtml(ratio: number, barWidth = 220): string {
   return `<img src="${progressBarDataUri(ratio, barWidth)}" width="${barWidth}" height="10" />`;
 }
 
+function segmentedProgressBarDataUri(
+  segments: Array<{ ratio: number; opacity: number }>,
+  barWidth = 220,
+): string {
+  const width = barWidth;
+  const height = 10;
+  const r = height / 2;
+  const light = isLightTheme();
+  const trackColor = light ? "rgba(0,0,0,0.12)" : "rgba(255,255,255,0.18)";
+  const fillColor = light ? "rgba(0,0,0,0.55)" : "rgba(255,255,255,0.82)";
+
+  let svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}">`;
+  svg += `<rect width="${width}" height="${height}" rx="${r}" ry="${r}" fill="${trackColor}"/>`;
+
+  let offset = 0;
+  for (const segment of segments) {
+    const segmentWidth = Math.round(Math.min(Math.max(segment.ratio, 0), 1) * width);
+    if (segmentWidth <= 0) continue;
+    const opacity = Math.min(Math.max(segment.opacity, 0), 1);
+    svg += `<rect x="${offset}" width="${segmentWidth}" height="${height}" fill="${fillColor}" opacity="${opacity}"/>`;
+    offset += segmentWidth;
+  }
+
+  svg += `</svg>`;
+  const encoded = Buffer.from(svg).toString("base64");
+  return `data:image/svg+xml;base64,${encoded}`;
+}
+
+function segmentedProgressBarHtml(
+  segments: Array<{ ratio: number; opacity: number }>,
+  barWidth = 220,
+): string {
+  return `<img src="${segmentedProgressBarDataUri(segments, barWidth)}" width="${barWidth}" height="10" />`;
+}
+
 function escapeHtml(value: string): string {
   return value.replace(/[&<>"']/g, (char) => {
     const entities: Record<string, string> = {
@@ -153,8 +193,6 @@ function summaryDividerHtml(height = 52): string {
   const encoded = Buffer.from(svg).toString("base64");
   return `<img src="data:image/svg+xml;base64,${encoded}" width="2" height="${height}" />`;
 }
-
-type OnDemandUsage = UsagePayload["onDemand"];
 
 function buildModelBreakdownTableMarkdown(
   rows: Array<{ model: string; totalTokens: number; requests: number; spendCents: number }>,
@@ -189,30 +227,17 @@ function buildModelBreakdownTableMarkdown(
   return lines.join("\n");
 }
 
-function isOnDemandVisible(onDemand: OnDemandUsage): boolean {
-  return onDemand.state !== "disabled";
+function formatOnDemandStatus(onDemand: UsagePayload["onDemand"]): string {
+  return formatOnDemandValue(onDemand).replace(" / ", "/");
 }
 
-function getOnDemandRatio(onDemand: OnDemandUsage): number | null {
-  if (onDemand.state !== "limited") return null;
-  if (onDemand.limitDollars === null || onDemand.limitDollars <= 0) return null;
-  return onDemand.spendDollars / onDemand.limitDollars;
-}
-
-function formatOnDemandStatus(onDemand: OnDemandUsage): string {
+function formatOnDemandTooltipCell(onDemand: UsagePayload["onDemand"]): string {
   if (onDemand.state === "unlimited") {
-    return `$${onDemand.spendDollars.toFixed(2)}`;
-  }
-  return `$${onDemand.spendDollars.toFixed(2)}/$${(onDemand.limitDollars ?? 0).toFixed(2)}`;
-}
-
-function formatOnDemandTooltipCell(onDemand: OnDemandUsage): string {
-  if (onDemand.state === "unlimited") {
-    return `$${onDemand.spendDollars.toFixed(2)}`;
+    return formatOnDemandValue(onDemand);
   }
   const ratio = getOnDemandRatio(onDemand);
   const pct = ratio === null ? 0 : Math.round(ratio * 100);
-  return `$${onDemand.spendDollars.toFixed(2)} / $${(onDemand.limitDollars ?? 0).toFixed(2)} (${pct}%)`;
+  return `${formatOnDemandValue(onDemand)} (${pct}%)`;
 }
 
 function updateStatusBar(data: UsagePayload) {
@@ -249,6 +274,7 @@ function updateStatusBar(data: UsagePayload) {
     {
       markdown: (ratio) => progressBarMarkdown(ratio, barW),
       html: (ratio) => progressBarHtml(ratio, barW),
+      segmentedHtml: (segments) => segmentedProgressBarHtml(segments, barW),
       divider: () => summaryDividerHtml(),
     },
   );
@@ -371,8 +397,8 @@ async function showDetails() {
   let message = `Requests: ${includedRequests.used}/${includedRequests.limit} (${reqPct}%)`;
   if (onDemandVisible) {
     const spendText = onDemand.state === "unlimited"
-      ? `$${onDemand.spendDollars.toFixed(2)}`
-      : `$${onDemand.spendDollars.toFixed(2)}/$${(onDemand.limitDollars ?? 0).toFixed(2)} (${spendPct ?? 0}%)`;
+      ? formatOnDemandValue(onDemand)
+      : `${formatOnDemandValue(onDemand).replace(" / ", "/")} (${spendPct ?? 0}%)`;
     message += ` | Spend: ${spendText}`;
   }
   if (resetsAt) message += ` | Resets: ${formatResetDate(resetsAt)}`;

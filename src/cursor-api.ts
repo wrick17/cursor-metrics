@@ -1,16 +1,26 @@
 import { closeSync, existsSync, fstatSync, openSync, readSync } from "fs";
 import { homedir } from "os";
 import { join } from "path";
+import {
+  buildOnDemandFromSpendLimit,
+  buildTeamOnDemandFallback,
+  finalizeOnDemandUsage,
+  mergeOnDemandUsage,
+  resolveOnDemandEnabled,
+  resolveOnDemandFromUsageSummary,
+  type OnDemandUsage,
+} from "./on-demand";
+
+export type { OnDemandBreakdown, OnDemandUsage } from "./on-demand";
 
 export type UsagePayload = {
   includedRequests: { used: number; limit: number };
-  onDemand: {
-    state: "disabled" | "limited" | "unlimited";
-    spendDollars: number;
-    limitDollars: number | null;
-  };
+  onDemand: OnDemandUsage;
   resetsAt: string | null;
 };
+
+const CURRENT_PERIOD_USAGE_URL =
+  "https://api2.cursor.sh/aiserver.v1.DashboardService/GetCurrentPeriodUsage";
 
 export type UsageEvent = {
   timestamp: number;
@@ -48,7 +58,7 @@ function getDbPath(): string {
   }
 }
 
-type AuthInfo = { userId: string; sessionToken: string; email: string | null };
+type AuthInfo = { userId: string; accessToken: string; sessionToken: string; email: string | null };
 
 let cachedAuth: { info: AuthInfo | null; ts: number } = { info: null, ts: 0 };
 const AUTH_CACHE_TTL = 10_000;
@@ -360,7 +370,7 @@ async function getCursorToken(): Promise<AuthInfo | null> {
   const email = authValues["cursorAuth/cachedEmail"] ?? null;
   log(`Cached email: ${email}`);
 
-  const info = { userId, sessionToken: `${userId}%3A%3A${jwt}`, email };
+  const info = { userId, accessToken: jwt, sessionToken: `${userId}%3A%3A${jwt}`, email };
   cachedAuth = { info, ts: Date.now() };
   return info;
 }
@@ -372,6 +382,47 @@ function cursorHeaders(sessionToken: string) {
     Origin: "https://cursor.com",
     Referer: "https://cursor.com/dashboard",
   } as const;
+}
+
+function connectHeaders(accessToken: string) {
+  return {
+    Authorization: `Bearer ${accessToken}`,
+    "Content-Type": "application/json",
+    "Connect-Protocol-Version": "1",
+  } as const;
+}
+
+async function fetchUsageSummary(
+  headers: ReturnType<typeof cursorHeaders>,
+): Promise<Record<string, unknown> | null> {
+  const res = await fetch("https://cursor.com/api/usage-summary", withTimeout({ headers }));
+  if (!res.ok) {
+    log(`usage-summary failed: ${res.status}`);
+    return null;
+  }
+  return asRecord(await res.json());
+}
+
+async function fetchCurrentPeriodUsage(accessToken: string): Promise<Record<string, unknown> | null> {
+  const res = await fetch(CURRENT_PERIOD_USAGE_URL, withTimeout({
+    method: "POST",
+    headers: connectHeaders(accessToken),
+    body: "{}",
+  }));
+
+  if (!res.ok) {
+    log(`GetCurrentPeriodUsage failed: ${res.status}`);
+    return null;
+  }
+
+  const data = await res.json();
+  return asRecord(data);
+}
+
+function billingCycleEndIso(periodUsage: Record<string, unknown> | null): string | null {
+  if (!periodUsage) return null;
+  const cycleEnd = toNumber(periodUsage.billingCycleEnd);
+  return cycleEnd !== null ? new Date(cycleEnd).toISOString() : null;
 }
 
 function nextMonth(iso: string): string {
@@ -520,7 +571,7 @@ type SetupCache = {
   isTeamMember: boolean;
   teamId?: number;
   maxRequestUsage: number;
-  onDemandEnabled: boolean;
+  stripeRecord: Record<string, unknown> | null;
 };
 
 let cachedSetup: SetupCache | null = null;
@@ -547,15 +598,16 @@ async function ensureSetup(
   const usage = usageRes.ok ? await usageRes.json() : null;
   const totals = extractUsageTotals(usage);
 
+  const stripeRecord = asRecord(stripe);
   cachedSetup = {
-    isTeamMember: !!(stripe?.isTeamMember && stripe.teamId),
-    teamId: stripe?.teamId,
+    isTeamMember: !!(stripeRecord?.isTeamMember && stripeRecord.teamId),
+    teamId: stripeRecord?.teamId as number | undefined,
     maxRequestUsage: totals.limit > 0 ? totals.limit : totals.used,
-    onDemandEnabled: Boolean(stripe?.isOnBillableAuto),
+    stripeRecord,
   };
 
   log(
-    `Setup cached: team=${cachedSetup.isTeamMember}, teamId=${cachedSetup.teamId}, maxReq=${cachedSetup.maxRequestUsage}, onDemandEnabled=${cachedSetup.onDemandEnabled}`,
+    `Setup cached: team=${cachedSetup.isTeamMember}, teamId=${cachedSetup.teamId}, maxReq=${cachedSetup.maxRequestUsage}, stripeKeys=${stripeRecord ? Object.keys(stripeRecord).join(", ") : "none"}`,
   );
   return cachedSetup;
 }
@@ -587,13 +639,15 @@ async function fetchTeamUsage(
   headers: ReturnType<typeof cursorHeaders>,
   setup: SetupCache,
 ): Promise<UsagePayload | null> {
-  const [teamSpendRes, usageRes] = await Promise.all([
+  const [teamSpendRes, usageRes, usageSummary, periodUsage] = await Promise.all([
     fetch("https://cursor.com/api/dashboard/get-team-spend", withTimeout({
       method: "POST",
       headers,
       body: JSON.stringify({ teamId: setup.teamId }),
     })),
     fetch(`https://cursor.com/api/usage?user=${auth.userId}`, withTimeout({ headers })),
+    fetchUsageSummary(headers),
+    fetchCurrentPeriodUsage(auth.accessToken),
   ]);
 
   if (!teamSpendRes.ok) {
@@ -644,27 +698,35 @@ async function fetchTeamUsage(
   log(`Team request source: used=${usedSource}, limit=${limitSource}`);
 
   const spendCents = toNumber(meRecord.spendCents) ?? 0;
-  const spendDollars = spendCents / 100;
-  const hardLimit = toNumber(meRecord.hardLimitOverrideDollars);
-  const onDemandState = !setup.onDemandEnabled
-    ? "disabled"
-    : hardLimit !== null && hardLimit > 0
-      ? "limited"
-      : "unlimited";
-  const limitDollars = onDemandState === "limited" ? hardLimit : null;
-  log(`On-demand state: ${onDemandState}`);
+  const usageSummaryEnabled = resolveOnDemandFromUsageSummary(usageSummary, true);
+  const onDemandEnabled = resolveOnDemandEnabled(
+    setup.stripeRecord,
+    periodUsage,
+    dataRecord,
+    usageSummaryEnabled,
+  );
+  const onDemandFromPeriod = buildOnDemandFromSpendLimit(
+    periodUsage?.spendLimitUsage,
+    onDemandEnabled,
+    spendCents,
+  );
+  const onDemandFallback = buildTeamOnDemandFallback(members, meRecord, dataRecord, onDemandEnabled);
+  const onDemand = finalizeOnDemandUsage(
+    mergeOnDemandUsage(onDemandFromPeriod, onDemandFallback, onDemandEnabled),
+    onDemandEnabled,
+  );
+  const spendLimitLog = asRecord(periodUsage?.spendLimitUsage);
+  log(
+    `On-demand state: ${onDemand.state}, enabled=${onDemandEnabled}, summary.onDemand=${usageSummaryEnabled ?? "n/a"}, period.enabled=${periodUsage?.enabled ?? "n/a"}${onDemand.breakdown?.isTeamPool ? " (team pool)" : ""}${spendLimitLog ? `, spendLimit={pooledLimit:${spendLimitLog.pooledLimit ?? "n/a"}, pooledUsed:${spendLimitLog.pooledUsed ?? "n/a"}, pooledRemaining:${spendLimitLog.pooledRemaining ?? "n/a"}}` : ""}`,
+  );
 
   const result: UsagePayload = {
     includedRequests: {
       used,
       limit,
     },
-    onDemand: {
-      state: onDemandState,
-      spendDollars,
-      limitDollars,
-    },
-    resetsAt,
+    onDemand,
+    resetsAt: billingCycleEndIso(periodUsage) ?? resetsAt,
   };
 
   const spendLimitLabel = result.onDemand.state === "unlimited"
@@ -683,25 +745,39 @@ async function fetchSoloUsage(
   headers: ReturnType<typeof cursorHeaders>,
   setup: SetupCache,
 ): Promise<UsagePayload | null> {
-  const res = await fetch(`https://cursor.com/api/usage?user=${auth.userId}`, withTimeout({ headers }));
+  const [usageRes, periodUsage, usageSummary] = await Promise.all([
+    fetch(`https://cursor.com/api/usage?user=${auth.userId}`, withTimeout({ headers })),
+    fetchCurrentPeriodUsage(auth.accessToken),
+    fetchUsageSummary(headers),
+  ]);
+  const usageSummaryEnabled = resolveOnDemandFromUsageSummary(usageSummary, false);
+  const onDemandEnabled = resolveOnDemandEnabled(
+    setup.stripeRecord,
+    periodUsage,
+    null,
+    usageSummaryEnabled,
+  );
+  const onDemand = finalizeOnDemandUsage(
+    buildOnDemandFromSpendLimit(periodUsage?.spendLimitUsage, onDemandEnabled),
+    onDemandEnabled,
+  );
 
-  if (!res.ok) {
-    log(`Usage API failed: ${res.status}`);
+  if (!usageRes.ok) {
+    log(`Usage API failed: ${usageRes.status}`);
     return null;
   }
 
-  const usage = await res.json();
+  const usage = await usageRes.json();
   const totals = extractUsageTotals(usage);
-  const resetsAt = usage.startOfMonth ? nextMonth(usage.startOfMonth) : null;
+  const resetsAt = billingCycleEndIso(periodUsage)
+    ?? (usage.startOfMonth ? nextMonth(usage.startOfMonth) : null);
 
   const result: UsagePayload = {
     includedRequests: {
       used: totals.used,
       limit: totals.limit,
     },
-    onDemand: setup.onDemandEnabled
-      ? { state: "limited", spendDollars: 0, limitDollars: 0 }
-      : { state: "disabled", spendDollars: 0, limitDollars: null },
+    onDemand,
     resetsAt,
   };
 
