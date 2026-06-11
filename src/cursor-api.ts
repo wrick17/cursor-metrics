@@ -1,3 +1,4 @@
+import { execFileSync } from "child_process";
 import { closeSync, existsSync, fstatSync, openSync, readSync } from "fs";
 import { homedir } from "os";
 import { join } from "path";
@@ -37,6 +38,20 @@ export function configure(opts: { logger: Logger }) {
   log = opts.logger;
 }
 
+// WSL_DISTRO_NAME is injected by all WSL versions (1 and 2) and is absent in native Linux.
+function isWsl(): boolean {
+  return !!process.env.WSL_DISTRO_NAME;
+}
+
+// Cursor runs on the Windows host, not inside WSL, so its auth database lives in the
+// Windows user profile. We resolve that profile dynamically to avoid hardcoding usernames
+// or assuming a specific mount prefix (e.g. /mnt/c). cmd.exe gives us the canonical
+// Windows path and wslpath converts it respecting the actual WSL mount configuration.
+function resolveWslWindowsUserProfile(): string {
+  const winPath = execFileSync("cmd.exe", ["/c", "echo %USERPROFILE%"], { encoding: "utf8" }).trim();
+  return execFileSync("wslpath", [winPath], { encoding: "utf8" }).trim();
+}
+
 function getDbPath(): string {
   switch (process.platform) {
     case "darwin":
@@ -44,6 +59,18 @@ function getDbPath(): string {
     case "win32":
       return join(process.env.APPDATA ?? join(homedir(), "AppData/Roaming"), "Cursor/User/globalStorage/state.vscdb");
     default:
+      // When running under WSL, the Linux homedir is irrelevant for Cursor's data.
+      // The database is on the Windows side; look it up there.
+      if (isWsl()) {
+        try {
+          const winProfile = resolveWslWindowsUserProfile();
+          return join(winProfile, "AppData/Roaming/Cursor/User/globalStorage/state.vscdb");
+        } catch {
+          // If resolution fails (unusual WSL setup, missing tools), fall through to the
+          // native Linux path so the extension degrades gracefully instead of crashing.
+          log("WSL detected but could not resolve Windows user profile; falling back to Linux path");
+        }
+      }
       return join(homedir(), ".config/Cursor/User/globalStorage/state.vscdb");
   }
 }
