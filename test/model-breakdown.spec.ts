@@ -3,6 +3,8 @@ import type { DailySpendRow, UsageEvent } from "../src/cursor-api";
 import {
   aggregateByModel,
   aggregateSpendByCategory,
+  aggregateTokensByCategory,
+  buildModelTokenTotals,
   filterZeroTokenModels,
   formatDollarsFromCents,
   getDurationCutoff,
@@ -10,6 +12,21 @@ import {
 
 const now = Date.UTC(2026, 3, 20, 12, 0, 0);
 const dayMs = 86_400_000;
+
+const baseEvent = {
+  spendCents: 0,
+  maxMode: false,
+  inputTokens: 0,
+  outputTokens: 0,
+  cacheWriteTokens: 0,
+  cacheReadTokens: 0,
+  tokenCostCents: 0,
+  cursorTokenFee: 0,
+  isTokenBasedCall: false,
+  isHeadless: false,
+  isChargeable: true,
+  conversationId: null,
+};
 
 describe("model breakdown aggregation", () => {
   it("sums spend by category for the selected duration", () => {
@@ -26,11 +43,24 @@ describe("model breakdown aggregation", () => {
     expect(totals.has("unknown")).toBeFalse();
   });
 
+  it("sums tokens by category for the selected duration", () => {
+    const spendRows: DailySpendRow[] = [
+      { day: now - 2 * dayMs, category: "gpt-5.3-codex", spendCents: 120, totalTokens: 10_000 },
+      { day: now - 2 * dayMs, category: "gpt-5.3-codex", spendCents: 80, totalTokens: 20_000 },
+      { day: now - 1 * dayMs, category: "gpt-5.4-high", spendCents: 55, totalTokens: 5_000 },
+      { day: now - 40 * dayMs, category: "gpt-5.3-codex", spendCents: 999, totalTokens: 100_000 },
+    ];
+
+    const totals = aggregateTokensByCategory(spendRows, "7d", null, now);
+    expect(totals.get("gpt-5.3-codex")).toBe(30_000);
+    expect(totals.get("gpt-5.4-high")).toBe(5_000);
+  });
+
   it("joins tokens, requests, and spend by model", () => {
     const events: UsageEvent[] = [
-      { timestamp: now - 1 * dayMs, model: "gpt-5.3-codex", kind: "On-Demand", totalTokens: 2000, requests: 2 },
-      { timestamp: now - 2 * dayMs, model: "gpt-5.3-codex", kind: "On-Demand", totalTokens: 3000, requests: 1 },
-      { timestamp: now - 1 * dayMs, model: "composer-2", kind: "Included", totalTokens: 1000, requests: 4 },
+      { ...baseEvent, timestamp: now - 1 * dayMs, model: "gpt-5.3-codex", kind: "On-Demand", totalTokens: 2000, requests: 2 },
+      { ...baseEvent, timestamp: now - 2 * dayMs, model: "gpt-5.3-codex", kind: "On-Demand", totalTokens: 3000, requests: 1 },
+      { ...baseEvent, timestamp: now - 1 * dayMs, model: "composer-2", kind: "Included", totalTokens: 1000, requests: 4 },
     ];
     const spendRows: DailySpendRow[] = [
       { day: now - 1 * dayMs, category: "gpt-5.3-codex", spendCents: 320, totalTokens: 5000 },
@@ -43,11 +73,70 @@ describe("model breakdown aggregation", () => {
     ]);
   });
 
+  it("prefers daily spend tokens over per-event totals when daily rows exist", () => {
+    const events: UsageEvent[] = [
+      { ...baseEvent, timestamp: now - 1 * dayMs, model: "gpt-5.3-codex", kind: "Included", totalTokens: 9000, requests: 2 },
+    ];
+    const spendRows: DailySpendRow[] = [
+      { day: now - 1 * dayMs, category: "gpt-5.3-codex", spendCents: 100, totalTokens: 3000 },
+    ];
+
+    const rows = aggregateByModel(events, spendRows, "7d", null, now);
+    expect(rows).toEqual([
+      { model: "gpt-5.3-codex", totalTokens: 3000, requests: 2, spendCents: 100 },
+    ]);
+  });
+
+  it("falls back to event tokens when daily spend rows are empty", () => {
+    const events: UsageEvent[] = [
+      { ...baseEvent, timestamp: now - 1 * dayMs, model: "gpt-5.3-codex", kind: "Included", totalTokens: 9000, requests: 2 },
+    ];
+
+    const rows = aggregateByModel(events, [], "7d", null, now);
+    expect(rows).toEqual([
+      { model: "gpt-5.3-codex", totalTokens: 9000, requests: 2, spendCents: 0 },
+    ]);
+  });
+
+  it("uses filtered event tokens when usage filter is not all", () => {
+    const events: UsageEvent[] = [
+      { ...baseEvent, timestamp: now - 1 * dayMs, model: "gpt-5.3-codex", kind: "Included", totalTokens: 1000, requests: 1 },
+      { ...baseEvent, timestamp: now - 1 * dayMs, model: "gpt-5.3-codex", kind: "On-Demand", totalTokens: 2000, requests: 1 },
+    ];
+    const spendRows: DailySpendRow[] = [
+      { day: now - 1 * dayMs, category: "gpt-5.3-codex", spendCents: 100, totalTokens: 9000 },
+    ];
+
+    const included = buildModelTokenTotals(events, spendRows, "7d", null, now, "included");
+    const onDemand = buildModelTokenTotals(events, spendRows, "7d", null, now, "ondemand");
+    const all = buildModelTokenTotals(events, spendRows, "7d", null, now, "all");
+
+    expect(included.get("gpt-5.3-codex")).toBe(1000);
+    expect(onDemand.get("gpt-5.3-codex")).toBe(2000);
+    expect(all.get("gpt-5.3-codex")).toBe(9000);
+  });
+
+  it("falls back to event tokens for models missing from daily spend", () => {
+    const events: UsageEvent[] = [
+      { ...baseEvent, timestamp: now - 1 * dayMs, model: "gpt-5.3-codex", kind: "Included", totalTokens: 9000, requests: 2 },
+      { ...baseEvent, timestamp: now - 1 * dayMs, model: "composer-2", kind: "Included", totalTokens: 1000, requests: 1 },
+    ];
+    const spendRows: DailySpendRow[] = [
+      { day: now - 1 * dayMs, category: "gpt-5.3-codex", spendCents: 100, totalTokens: 3000 },
+    ];
+
+    const rows = aggregateByModel(events, spendRows, "7d", null, now);
+    expect(rows).toEqual([
+      { model: "gpt-5.3-codex", totalTokens: 3000, requests: 2, spendCents: 100 },
+      { model: "composer-2", totalTokens: 1000, requests: 1, spendCents: 0 },
+    ]);
+  });
+
   it("supports sorting by selected column and direction", () => {
     const events: UsageEvent[] = [
-      { timestamp: now - 1 * dayMs, model: "zeta", kind: "On-Demand", totalTokens: 100, requests: 3 },
-      { timestamp: now - 1 * dayMs, model: "alpha", kind: "On-Demand", totalTokens: 200, requests: 1 },
-      { timestamp: now - 1 * dayMs, model: "beta", kind: "On-Demand", totalTokens: 150, requests: 2 },
+      { ...baseEvent, timestamp: now - 1 * dayMs, model: "zeta", kind: "On-Demand", totalTokens: 100, requests: 3 },
+      { ...baseEvent, timestamp: now - 1 * dayMs, model: "alpha", kind: "On-Demand", totalTokens: 200, requests: 1 },
+      { ...baseEvent, timestamp: now - 1 * dayMs, model: "beta", kind: "On-Demand", totalTokens: 150, requests: 2 },
     ];
     const spendRows: DailySpendRow[] = [
       { day: now - 1 * dayMs, category: "zeta", spendCents: 100, totalTokens: 100 },
@@ -67,9 +156,9 @@ describe("model breakdown aggregation", () => {
 
   it("applies duration cutoffs for 1d, 7d, and 30d", () => {
     const events: UsageEvent[] = [
-      { timestamp: now - 6 * dayMs, model: "gpt-5.3-codex", kind: "Included", totalTokens: 100, requests: 1 },
-      { timestamp: now - 20 * dayMs, model: "gpt-5.3-codex", kind: "Included", totalTokens: 200, requests: 1 },
-      { timestamp: now - 35 * dayMs, model: "gpt-5.3-codex", kind: "Included", totalTokens: 300, requests: 1 },
+      { ...baseEvent, timestamp: now - 6 * dayMs, model: "gpt-5.3-codex", kind: "Included", totalTokens: 100, requests: 1 },
+      { ...baseEvent, timestamp: now - 20 * dayMs, model: "gpt-5.3-codex", kind: "Included", totalTokens: 200, requests: 1 },
+      { ...baseEvent, timestamp: now - 35 * dayMs, model: "gpt-5.3-codex", kind: "Included", totalTokens: 300, requests: 1 },
     ];
     const spendRows: DailySpendRow[] = [
       { day: now - 6 * dayMs, category: "gpt-5.3-codex", spendCents: 50, totalTokens: 100 },
@@ -102,8 +191,8 @@ describe("model breakdown aggregation", () => {
     const cycleStart = Date.UTC(2026, 3, 15, 0, 0, 0);
 
     const events: UsageEvent[] = [
-      { timestamp: cycleStart - 1_000, model: "gpt-5.3-codex", kind: "Included", totalTokens: 50, requests: 1 },
-      { timestamp: cycleStart + 1_000, model: "gpt-5.3-codex", kind: "Included", totalTokens: 75, requests: 1 },
+      { ...baseEvent, timestamp: cycleStart - 1_000, model: "gpt-5.3-codex", kind: "Included", totalTokens: 50, requests: 1 },
+      { ...baseEvent, timestamp: cycleStart + 1_000, model: "gpt-5.3-codex", kind: "Included", totalTokens: 75, requests: 1 },
     ];
     const spendRows: DailySpendRow[] = [
       { day: cycleStart - 1_000, category: "gpt-5.3-codex", spendCents: 20, totalTokens: 50 },
@@ -122,8 +211,8 @@ describe("model breakdown aggregation", () => {
     const cycleStart = Date.UTC(2026, 4, 1, 0, 0, 0);
 
     const events: UsageEvent[] = [
-      { timestamp: cycleStart + 1000, model: "gpt-5.3-codex", kind: "Included", totalTokens: 111, requests: 1 },
-      { timestamp: cycleStart - 1000, model: "gpt-5.3-codex", kind: "Included", totalTokens: 222, requests: 1 },
+      { ...baseEvent, timestamp: cycleStart + 1000, model: "gpt-5.3-codex", kind: "Included", totalTokens: 111, requests: 1 },
+      { ...baseEvent, timestamp: cycleStart - 1000, model: "gpt-5.3-codex", kind: "Included", totalTokens: 222, requests: 1 },
     ];
 
     const rows = aggregateByModel(events, [], "billingCycle", resetsAt, may31Noon);
@@ -140,8 +229,13 @@ describe("model breakdown formatting", () => {
     expect(formatDollarsFromCents(12345)).toBe("$123.45");
   });
 
+  it("formats cents into euros", () => {
+    expect(formatDollarsFromCents(229, "eur", "en")).toBe("€2.11");
+    expect(formatDollarsFromCents(12345, "eur", "it")).toContain("113");
+  });
+
   it("computes cutoff timestamps for all durations", () => {
-    expect(getDurationCutoff("1d", null, now)).toBe(now - 1 * dayMs);
+    expect(getDurationCutoff("1d", null, now)).toBe(Date.UTC(2026, 3, 20, 0, 0, 0));
     expect(getDurationCutoff("7d", null, now)).toBe(now - 7 * dayMs);
     expect(getDurationCutoff("30d", null, now)).toBe(now - 30 * dayMs);
     expect(getDurationCutoff("billingCycle", "2026-05-01T00:00:00.000Z", now)).toBe(Date.UTC(2026, 3, 1, 0, 0, 0));

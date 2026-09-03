@@ -1,15 +1,47 @@
-import { randomBytes } from "crypto";
 import * as vscode from "vscode";
-import type { DashboardState } from "./dashboard-state";
+import {
+  CONVERSATION_PREVIEW_KEY,
+  DASHBOARD_CURRENCY_KEY,
+  DASHBOARD_LOCALE_KEY,
+  isDashboardCurrency,
+  isDashboardLocale,
+  type DashboardCurrency,
+  type DashboardLocale,
+} from "./dashboard-locale";
+import { getDashboardLocale } from "./dashboard-locale-state";
+import { getDashboardCurrency } from "./dashboard-currency-state";
+import { loadConversationMessages } from "./conversation-messages";
+import {
+  loadDashboardUiPreferences,
+  saveDashboardUiPreferences,
+  type DashboardUiPreferences,
+} from "./dashboard-ui-state";
+import { normalizeUsageDuration, resolveConfiguredUsageDuration, syncUsageDurationToSettings } from "./duration-options";
+import type { UsageDuration } from "./model-breakdown";
+import type { DashboardState, UsageFilter } from "./dashboard-state";
+import type { UpdateUsageOptions } from "./extension-refresh";
+import { refreshPricingCatalog } from "./pricing-catalog-refresh";
+import { makeDashboardNonce, renderDashboardHtml } from "./dashboard/dashboard-html";
+
+type RefreshFn = (opts?: UpdateUsageOptions) => Promise<void>;
+type StateProvider = () => DashboardState | null;
+type LocaleChangeFn = (locale: DashboardLocale) => void;
+type PreviewChangeFn = (enabled: boolean) => void | Promise<void>;
+
+type DashboardEventFilter = {
+  range: UsageDuration;
+  usageFilter: UsageFilter;
+};
+
+function isUsageDuration(value: unknown): value is UsageDuration {
+  return value === "1d" || value === "7d" || value === "30d" || value === "billingCycle";
+}
+
+function isUsageFilter(value: unknown): value is UsageFilter {
+  return value === "all" || value === "included" || value === "ondemand";
+}
 
 export const OPEN_DASHBOARD_COMMAND = "cursor-usage.openDashboard";
-
-type RefreshFn = () => Promise<void>;
-type StateProvider = () => DashboardState | null;
-
-function makeNonce(): string {
-  return randomBytes(16).toString("base64url");
-}
 
 export class DashboardPanel {
   static currentPanel: DashboardPanel | undefined;
@@ -18,11 +50,14 @@ export class DashboardPanel {
     context: vscode.ExtensionContext,
     onRefresh: RefreshFn,
     getState: StateProvider,
+    onLocaleChange?: LocaleChangeFn,
+    onPreviewChange?: PreviewChangeFn,
   ): DashboardPanel {
-    if (DashboardPanel.currentPanel) {
-      DashboardPanel.currentPanel.panel.reveal(vscode.ViewColumn.Active);
-      return DashboardPanel.currentPanel;
-    }
+  if (DashboardPanel.currentPanel) {
+    DashboardPanel.currentPanel.updateCallbacks(onLocaleChange, onPreviewChange);
+    DashboardPanel.currentPanel.panel.reveal(vscode.ViewColumn.Active);
+    return DashboardPanel.currentPanel;
+  }
 
     const panel = vscode.window.createWebviewPanel(
       "cursorUsageDashboard",
@@ -35,20 +70,38 @@ export class DashboardPanel {
       },
     );
 
-    DashboardPanel.currentPanel = new DashboardPanel(panel, context, onRefresh, getState);
+    DashboardPanel.currentPanel = new DashboardPanel(panel, context, onRefresh, getState, onLocaleChange, onPreviewChange);
     return DashboardPanel.currentPanel;
   }
 
   private readonly panel: vscode.WebviewPanel;
+  private readonly context: vscode.ExtensionContext;
+  private onLocaleChange?: LocaleChangeFn;
+  private onPreviewChange?: PreviewChangeFn;
   private readonly disposables: vscode.Disposable[] = [];
+  private readonly getState: StateProvider;
+  private dashboardPrefs: DashboardEventFilter = {
+    range: "billingCycle",
+    usageFilter: "all",
+  };
+
+  static getDashboardEventFilter(): DashboardEventFilter | null {
+    return DashboardPanel.currentPanel?.dashboardPrefs ?? null;
+  }
 
   private constructor(
     panel: vscode.WebviewPanel,
     context: vscode.ExtensionContext,
     onRefresh: RefreshFn,
     getState: StateProvider,
+    onLocaleChange?: LocaleChangeFn,
+    onPreviewChange?: PreviewChangeFn,
   ) {
     this.panel = panel;
+    this.context = context;
+    this.getState = getState;
+    this.onLocaleChange = onLocaleChange;
+    this.onPreviewChange = onPreviewChange;
     this.panel.webview.html = this.renderHtml(panel.webview, context.extensionUri);
 
     this.panel.onDidDispose(() => this.dispose(), null, this.disposables);
@@ -58,13 +111,120 @@ export class DashboardPanel {
         if (!msg || typeof msg !== "object") return;
         if (msg.type === "ready") {
           const state = getState();
+          const hasBillingCycle = Boolean(state?.resetsAt);
+          const prefs = loadDashboardUiPreferences(this.context);
+          const cfgRange = resolveConfiguredUsageDuration(
+            vscode.workspace.getConfiguration("cursorUsage").get("usageDuration"),
+            hasBillingCycle,
+          );
+          const mergedPrefs = {
+            ...prefs,
+            range: prefs.range ?? cfgRange,
+          };
+          if (!prefs.range) {
+            await saveDashboardUiPreferences(this.context, { range: cfgRange });
+          }
+          this.postUiPreferences(mergedPrefs);
+          const savedLocale = this.context.globalState.get<DashboardLocale>(DASHBOARD_LOCALE_KEY);
+          if (isDashboardLocale(savedLocale)) {
+            this.panel.webview.postMessage({ type: "init", locale: savedLocale });
+          }
+          const savedCurrency = this.context.globalState.get<DashboardCurrency>(DASHBOARD_CURRENCY_KEY);
+          if (isDashboardCurrency(savedCurrency)) {
+            this.panel.webview.postMessage({ type: "initCurrency", currency: savedCurrency });
+          }
+          const previewEnabled = this.context.globalState.get<boolean>(CONVERSATION_PREVIEW_KEY) === true;
+          this.panel.webview.postMessage({ type: "initPreview", enabled: previewEnabled });
           if (state) this.postState(state);
+        } else if (msg.type === "setLocale" && isDashboardLocale(msg.locale)) {
+          await this.context.globalState.update(DASHBOARD_LOCALE_KEY, msg.locale);
+          this.onLocaleChange?.(msg.locale);
+        } else if (msg.type === "setCurrency" && isDashboardCurrency(msg.currency)) {
+          await this.context.globalState.update(DASHBOARD_CURRENCY_KEY, msg.currency);
+          this.onLocaleChange?.(getDashboardLocale(this.context));
+        } else if (msg.type === "setConversationPreview" && typeof msg.enabled === "boolean") {
+          this.panel.webview.postMessage({ type: "previewLoading", on: true });
+          try {
+            if (this.onPreviewChange) {
+              await this.onPreviewChange(msg.enabled);
+            } else {
+              this.panel.webview.postMessage({
+                type: "previewStatus",
+                enabled: msg.enabled,
+                titleCount: 0,
+                conversationCount: 0,
+                error: "handler_unavailable",
+              });
+            }
+          } finally {
+            this.panel.webview.postMessage({ type: "previewLoading", on: false });
+          }
+        } else if (msg.type === "saveUiPreferences") {
+          const patch = msg.preferences as DashboardUiPreferences | undefined;
+          if (patch && typeof patch === "object") {
+            await saveDashboardUiPreferences(this.context, patch);
+          }
+        } else if (msg.type === "syncRangeToSettings" && isUsageDuration(msg.range)) {
+          const state = getState();
+          const hasBillingCycle = Boolean(state?.resetsAt);
+          const normalized = normalizeUsageDuration(msg.range, hasBillingCycle);
+          await syncUsageDurationToSettings(msg.range, hasBillingCycle);
+          this.dashboardPrefs.range = normalized;
+        } else if (msg.type === "syncDashboardPrefs") {
+          if (isUsageDuration(msg.range)) this.dashboardPrefs.range = msg.range;
+          if (isUsageFilter(msg.usageFilter)) this.dashboardPrefs.usageFilter = msg.usageFilter;
+          // Webview already filters charts/tables locally from the full event list.
+        } else if (msg.type === "getConversationMessages" && typeof msg.conversationId === "string") {
+          try {
+            const conversationEvents = this.getState()?.events.filter(
+              (event) => event.conversationId === msg.conversationId,
+            ) ?? [];
+            const messages = await loadConversationMessages(
+              msg.conversationId,
+              this.context.extensionPath,
+              conversationEvents,
+            );
+            this.panel.webview.postMessage({
+              type: "conversationMessages",
+              conversationId: msg.conversationId,
+              messages,
+            });
+          } catch (err: unknown) {
+            this.panel.webview.postMessage({
+              type: "conversationMessages",
+              conversationId: msg.conversationId,
+              messages: [],
+              error: err instanceof Error ? err.message : String(err),
+            });
+          }
         } else if (msg.type === "refresh") {
           this.postLoading(true);
           try {
-            await onRefresh();
+            await onRefresh({ force: true });
           } finally {
             this.postLoading(false);
+          }
+        } else if (msg.type === "refreshPricingCatalog") {
+          this.panel.webview.postMessage({ type: "pricingSyncLoading", on: true });
+          try {
+            const result = await refreshPricingCatalog();
+            this.panel.webview.postMessage({
+              type: "pricingSyncStatus",
+              ok: true,
+              updated: result.updated,
+              added: result.added,
+              warnings: result.warnings,
+            });
+            const state = getState();
+            if (state) this.postState(state);
+          } catch (err: unknown) {
+            this.panel.webview.postMessage({
+              type: "pricingSyncStatus",
+              ok: false,
+              error: err instanceof Error ? err.message : String(err),
+            });
+          } finally {
+            this.panel.webview.postMessage({ type: "pricingSyncLoading", on: false });
           }
         }
       },
@@ -74,11 +234,38 @@ export class DashboardPanel {
   }
 
   postState(state: DashboardState): void {
-    this.panel.webview.postMessage({ type: "state", state });
+    this.panel.webview.postMessage({
+      type: "state",
+      state,
+      locale: getDashboardLocale(this.context),
+      currency: getDashboardCurrency(this.context),
+    });
+  }
+
+  postUiPreferences(preferences: DashboardUiPreferences): void {
+    this.panel.webview.postMessage({ type: "uiPreferences", preferences });
+  }
+
+  postRangePreference(range: UsageDuration): void {
+    this.panel.webview.postMessage({ type: "rangePreference", range });
   }
 
   postLoading(on: boolean): void {
     this.panel.webview.postMessage({ type: "loading", on });
+  }
+
+  postPreviewStatus(enabled: boolean, titleCount: number, conversationCount: number): void {
+    this.panel.webview.postMessage({
+      type: "previewStatus",
+      enabled,
+      titleCount,
+      conversationCount,
+    });
+  }
+
+  updateCallbacks(onLocaleChange?: LocaleChangeFn, onPreviewChange?: PreviewChangeFn): void {
+    if (onLocaleChange) this.onLocaleChange = onLocaleChange;
+    if (onPreviewChange) this.onPreviewChange = onPreviewChange;
   }
 
   private dispose(): void {
@@ -94,166 +281,14 @@ export class DashboardPanel {
     const mediaUri = (file: string) =>
       webview.asWebviewUri(vscode.Uri.joinPath(extensionUri, "media", "dashboard", file));
 
-    const cssUri = mediaUri("dashboard.css");
-    const jsUri = mediaUri("dashboard.js");
-    const chartUri = mediaUri("chart.umd.js");
-    const nonce = makeNonce();
-    const csp = [
-      `default-src 'none'`,
-      `img-src ${webview.cspSource} data:`,
-      `style-src ${webview.cspSource} 'unsafe-inline'`,
-      `script-src 'nonce-${nonce}' ${webview.cspSource}`,
-      `font-src ${webview.cspSource}`,
-    ].join("; ");
-
-    return `<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8" />
-  <meta http-equiv="Content-Security-Policy" content="${csp}" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Cursor Usage</title>
-  <link rel="stylesheet" href="${cssUri}" />
-</head>
-<body>
-  <header class="dashboard-header">
-    <h1>Cursor Usage</h1>
-    <div class="header-actions">
-      <span id="last-updated" class="muted"></span>
-      <button id="refresh-btn" type="button">Refresh</button>
-    </div>
-  </header>
-
-  <section class="summary-cards" id="summary-cards"></section>
-
-  <section class="controls">
-    <div class="range-selector" id="range-selector" role="tablist">
-      <button data-range="1d" type="button">Last 24 hours</button>
-      <button data-range="7d" type="button">Last 7 days</button>
-      <button data-range="30d" type="button">Last 30 days</button>
-      <button data-range="billingCycle" type="button">Current Billing Cycle</button>
-    </div>
-  </section>
-
-  <section class="chart-section collapsible-section" data-section="usage">
-    <div class="chart-header">
-      <div class="section-title-row" data-toggle-section="usage">
-        <button
-          type="button"
-          class="section-toggle"
-          data-toggle-section="usage"
-          aria-expanded="true"
-          aria-controls="section-body-usage"
-          aria-label="Toggle Your Usage section"
-        >
-          <svg class="section-arrow" aria-hidden="true" viewBox="0 0 16 16" width="16" height="16"><path d="M4 6l4 4 4-4" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"/></svg>
-        </button>
-        <div>
-          <h2>Your Usage</h2>
-          <p class="muted">Per-day usage over the selected range</p>
-        </div>
-      </div>
-      <div class="chart-filters">
-        <label>Usage:
-          <select id="usage-filter">
-            <option value="all">All</option>
-            <option value="included">Included</option>
-            <option value="ondemand">On-Demand</option>
-          </select>
-        </label>
-        <label>Metric:
-          <select id="metric-filter">
-            <option value="spend">Spend</option>
-            <option value="tokens" selected>Tokens</option>
-            <option value="requests">Requests</option>
-          </select>
-        </label>
-      </div>
-    </div>
-    <div id="section-body-usage" class="section-body">
-      <div class="chart-wrapper">
-        <canvas id="usage-chart"></canvas>
-      </div>
-      <p id="chart-note" class="muted small"></p>
-    </div>
-  </section>
-
-  <section class="model-breakdown-section collapsible-section" data-section="breakdown">
-    <div class="events-header">
-      <div class="section-title-row" data-toggle-section="breakdown">
-        <button
-          type="button"
-          class="section-toggle"
-          data-toggle-section="breakdown"
-          aria-expanded="true"
-          aria-controls="section-body-breakdown"
-          aria-label="Toggle Usage by Model section"
-        >
-          <svg class="section-arrow" aria-hidden="true" viewBox="0 0 16 16" width="16" height="16"><path d="M4 6l4 4 4-4" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"/></svg>
-        </button>
-        <h2>Usage by Model</h2>
-      </div>
-      <span class="muted small" id="breakdown-range-label"></span>
-    </div>
-    <div id="section-body-breakdown" class="section-body">
-      <div class="table-scroll">
-        <table id="breakdown-table">
-          <thead>
-            <tr>
-              <th data-sort="model" class="sortable">Model</th>
-              <th data-sort="requests" class="sortable num">Requests</th>
-              <th data-sort="totalTokens" class="sortable num">Tokens</th>
-              <th data-sort="spendCents" class="sortable num">Spend</th>
-            </tr>
-          </thead>
-          <tbody></tbody>
-        </table>
-      </div>
-    </div>
-  </section>
-
-  <section class="events-section collapsible-section" data-section="events">
-    <div class="events-header">
-      <div class="section-title-row" data-toggle-section="events">
-        <button
-          type="button"
-          class="section-toggle"
-          data-toggle-section="events"
-          aria-expanded="true"
-          aria-controls="section-body-events"
-          aria-label="Toggle Events section"
-        >
-          <svg class="section-arrow" aria-hidden="true" viewBox="0 0 16 16" width="16" height="16"><path d="M4 6l4 4 4-4" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"/></svg>
-        </button>
-        <h2>Events</h2>
-      </div>
-      <button id="export-csv" type="button">Export CSV</button>
-    </div>
-    <div id="section-body-events" class="section-body">
-      <div class="table-scroll">
-        <table id="events-table">
-          <thead>
-            <tr>
-              <th data-sort="timestamp" class="sortable">Date</th>
-              <th data-sort="kind" class="sortable">Type</th>
-              <th data-sort="model" class="sortable">Model</th>
-              <th data-sort="totalTokens" class="sortable num">Tokens</th>
-              <th data-sort="requests" class="sortable num">Requests</th>
-              <th data-sort="spendCents" class="sortable num">Spend</th>
-            </tr>
-          </thead>
-          <tbody></tbody>
-        </table>
-      </div>
-      <div class="pagination" id="pagination"></div>
-    </div>
-  </section>
-
-  <div id="error-banner" class="error-banner hidden"></div>
-
-  <script nonce="${nonce}" src="${chartUri}"></script>
-  <script nonce="${nonce}" src="${jsUri}"></script>
-</body>
-</html>`;
+    return renderDashboardHtml(
+      webview,
+      {
+        cssUri: mediaUri("dashboard.css"),
+        jsUri: mediaUri("dashboard.js"),
+        chartUri: mediaUri("chart.umd.js"),
+      },
+      makeDashboardNonce(),
+    );
   }
 }

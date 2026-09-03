@@ -1,0 +1,309 @@
+<!DOCTYPE html>
+<html lang="it" class="screenshot-preview">
+<head>
+  <meta charset="UTF-8">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; script-src 'nonce-screenshot-nonce' 'self'; font-src 'self'">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Cursor Usage</title>
+  <link rel="stylesheet" href="dashboard.css">
+</head>
+<body>
+  <header class="dashboard-header">
+    <h1>Cursor Usage</h1>
+    <div class="header-actions">
+      <span id="last-updated" class="muted"></span>
+      <select id="currency-select" class="header-select" aria-label="Currency">
+        <option value="usd">USD ($)</option>
+        <option value="eur">EUR (€)</option>
+      </select>
+      <select id="lang-select" class="header-select" aria-label="Language">
+        <option value="en">EN</option>
+        <option value="it">IT</option>
+      </select>
+      <button id="refresh-btn" type="button" data-i18n="refresh">Refresh</button>
+    </div>
+  </header>
+
+  <section class="plan-banner hidden" id="plan-banner" aria-live="polite"></section>
+
+  <section class="summary-cards" id="summary-cards"></section>
+
+  <section class="controls">
+    <div class="range-selector" id="range-selector" role="tablist">
+      <button data-range="1d" type="button" data-i18n="range.1d">Last 24 hours</button>
+      <button data-range="7d" type="button" data-i18n="range.7d">Last 7 days</button>
+      <button data-range="30d" type="button" data-i18n="range.30d">Last 30 days</button>
+      <button data-range="billingCycle" type="button" data-i18n="range.billingCycle">Current Billing Cycle</button>
+    </div>
+  </section>
+
+  <div id="error-banner" class="error-banner hidden"></div>
+
+  <nav class="dashboard-tabs" role="tablist" aria-label="Dashboard views">
+    <button type="button" class="dashboard-tab active" data-main-tab="usage" role="tab" aria-selected="true" aria-controls="tab-panel-usage" data-i18n="mainTab.usage">Usage</button>
+    <button type="button" class="dashboard-tab" data-main-tab="pools" role="tab" aria-selected="false" aria-controls="tab-panel-pools" id="main-tab-pools" data-i18n="mainTab.pools">Pools</button>
+    <button type="button" class="dashboard-tab" data-main-tab="pricing" role="tab" aria-selected="false" aria-controls="tab-panel-pricing" data-i18n="mainTab.pricing">Pricing</button>
+    <button type="button" class="dashboard-tab" data-main-tab="activity" role="tab" aria-selected="false" aria-controls="tab-panel-activity" data-i18n="mainTab.activity">Activity</button>
+  </nav>
+
+  <div id="tab-panel-usage" class="dashboard-tab-panel" data-main-tab-panel="usage" role="tabpanel" aria-labelledby="main-tab-usage">
+  <section class="chart-section" data-section="usage">
+    <div class="chart-header">
+      <div class="section-title-block">
+        <h2 data-i18n="section.usage.title">Your Usage</h2>
+        <p class="muted" data-i18n="section.usage.desc">Per-day token usage over the selected range</p>
+      </div>
+    </div>
+    <div id="section-body-usage" class="section-body">
+      <div class="chart-wrapper">
+        <canvas id="usage-chart"></canvas>
+      </div>
+      <p id="chart-note" class="muted small"></p>
+    </div>
+  </section>
+
+  <section class="model-breakdown-section" data-section="breakdown">
+    <div class="events-header breakdown-header">
+      <div class="section-title-block">
+        <h2 data-i18n="section.breakdown.title">Usage by Model</h2>
+      </div>
+      <div class="breakdown-header-aside">
+        <div class="breakdown-filters">
+          <label><span data-i18n="filter.usage.label">Usage:</span>
+            <select id="usage-filter">
+              <option value="all" data-i18n="filter.all">All</option>
+              <option value="included" data-i18n="filter.included">Included</option>
+              <option value="ondemand" data-i18n="filter.ondemand">On-Demand</option>
+            </select>
+          </label>
+        </div>
+        <span class="muted small" id="breakdown-range-label"></span>
+      </div>
+    </div>
+    <div id="section-body-breakdown" class="section-body">
+      <div class="table-scroll">
+        <table id="breakdown-table">
+          <thead>
+            <tr>
+              <th data-sort="model" class="sortable" data-i18n="col.model">Model</th>
+              <th data-sort="requests" class="sortable num" data-i18n="col.requests">Requests</th>
+              <th data-sort="totalTokens" class="sortable num" data-i18n="col.tokens">Tokens</th>
+              <th data-sort="spendCents" class="sortable num" data-i18n="col.spend">Spend</th>
+              <th data-sort="theoreticalCents" class="sortable num" data-i18n="col.theoretical">Theoretical</th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+          <tfoot></tfoot>
+        </table>
+      </div>
+    </div>
+  </section>
+  </div>
+  <div id="tab-panel-pools" class="dashboard-tab-panel hidden" data-main-tab-panel="pools" role="tabpanel">
+  <section class="chart-section" data-section="pool">
+    <div class="chart-header">
+      <div class="section-title-block">
+        <h2 data-i18n="section.pool.title">Pool Usage</h2>
+        <p class="muted" data-i18n="section.pool.desc">Daily First-party models and API pool consumption for the billing cycle</p>
+      </div>
+    </div>
+    <div id="section-body-pool" class="section-body">
+      <div class="chart-wrapper">
+        <canvas id="pool-chart"></canvas>
+      </div>
+      <div class="pool-pace-header">
+        <h3 data-i18n="pool.pace.title">Daily balance</h3>
+        <p class="muted" data-i18n="pool.pace.desc">Positive bars = budget left that day; negative = overspend vs even spread until reset</p>
+      </div>
+      <div class="chart-wrapper chart-wrapper-compact">
+        <canvas id="pool-pace-chart"></canvas>
+      </div>
+      <p id="pool-chart-note" class="muted small"></p>
+    </div>
+  </section>
+  </div>
+  <div id="tab-panel-pricing" class="dashboard-tab-panel hidden" data-main-tab-panel="pricing" role="tabpanel">
+  <section class="pricing-section" data-section="pricing">
+    <div class="events-header">
+      <div class="section-title-block">
+        <h2 data-i18n="section.pricing.title">Model Pricing</h2>
+        <p class="muted small" data-i18n="section.pricing.desc">Official per-component rates and usage comparison</p>
+      </div>
+      <div class="pricing-header-meta">
+        <span id="pricing-updated" class="muted small"></span>
+        <a id="pricing-source" class="pricing-source-link" href="https://cursor.com/docs/models-and-pricing" target="_blank" rel="noopener noreferrer" data-i18n="pricingSource">Official source</a>
+        <span class="muted small" id="pricing-range-label"></span>
+      </div>
+    </div>
+    <div id="section-body-pricing" class="section-body">
+      <div class="pricing-pool-banner">
+        <div class="pricing-pool-card">
+          <strong data-i18n="pricingPoolFirstParty">First-party models</strong>
+          <p class="muted small" data-i18n="pricingPoolFirstPartyDesc">Auto, Composer 2.5, Cursor Grok 4.5 — generous included usage</p>
+        </div>
+        <div class="pricing-pool-card">
+          <strong data-i18n="pricingPoolApi">API pool</strong>
+          <p class="muted small" data-i18n="pricingPoolApiDesc">Specific models billed at API rates from included or on-demand usage</p>
+        </div>
+      </div>
+      <p class="pricing-modes-note muted small" data-i18n="pricingModesNote">Reasoning/thinking usually keeps the same $/M rates but uses more tokens. Fast and Max Mode can change per-token rates — see the Modes table under each model.</p>
+      <div class="pricing-toolbar">
+        <input id="pricing-search" type="search" class="pricing-search" data-i18n-placeholder="pricingSearchPlaceholder" placeholder="Search models…">
+        <label class="pricing-filter-label">
+          <span data-i18n="pricingFilterProvider">Provider</span>
+          <select id="pricing-provider-filter"></select>
+        </label>
+        <label class="pricing-filter-label">
+          <span data-i18n="pricingFilterPool">Pool</span>
+          <select id="pricing-pool-filter">
+            <option value="all" data-i18n="pricingFilterAllPools">All pools</option>
+            <option value="firstParty" data-i18n="pricingPoolFirstParty">First-party models</option>
+            <option value="api" data-i18n="pricingPoolApi">API</option>
+          </select>
+        </label>
+        <label class="pricing-filter-label pricing-used-toggle">
+          <input id="pricing-used-only" type="checkbox">
+          <span data-i18n="pricingFilterUsedOnly">Only models I use</span>
+        </label>
+      </div>
+      <div class="pricing-legend muted small">
+        <span><span class="token-dot token-dot-input"></span> <span data-i18n="pricingInput">Input</span></span>
+        <span><span class="token-dot token-dot-cache-write"></span> <span data-i18n="pricingCacheWrite">Cache write</span></span>
+        <span><span class="token-dot token-dot-cache-read"></span> <span data-i18n="pricingCacheRead">Cache read</span></span>
+        <span><span class="token-dot token-dot-output"></span> <span data-i18n="pricingOutput">Output</span></span>
+      </div>
+      <div class="table-scroll">
+        <table id="pricing-table">
+          <thead>
+            <tr>
+              <th data-sort="displayName" class="sortable" data-i18n="col.model">Model</th>
+              <th data-sort="provider" class="sortable" data-i18n="pricingColProvider">Provider</th>
+              <th data-sort="pool" class="sortable" data-i18n="pricingFilterPool">Pool</th>
+              <th data-sort="rate.input" class="sortable num" data-i18n="pricingInput">Input</th>
+              <th data-sort="rate.cacheWrite" class="sortable num" data-i18n="pricingCacheWrite">Cache W</th>
+              <th data-sort="rate.cacheRead" class="sortable num" data-i18n="pricingCacheRead">Cache R</th>
+              <th data-sort="rate.output" class="sortable num" data-i18n="pricingOutput">Output</th>
+              <th data-sort="usageTokens" class="sortable num" data-i18n="col.tokens">Tokens</th>
+              <th data-sort="usageSpend" class="sortable num" data-i18n="pricingColActual">Actual</th>
+              <th class="num" data-i18n="pricingColTheoretical">Theoretical</th>
+              <th class="num" data-i18n="pricingColDelta">Delta</th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+  </div>
+  <div id="tab-panel-activity" class="dashboard-tab-panel hidden" data-main-tab-panel="activity" role="tabpanel">
+  <section class="events-section" data-section="events">
+    <div class="events-header">
+      <div class="section-title-block">
+        <h2 id="activity-section-title">Events</h2>
+      </div>
+      <div class="events-toolbar">
+        <div class="activity-tabs" role="tablist" aria-label="Activity view">
+          <button type="button" class="activity-tab active" data-activity-tab="events" role="tab" aria-selected="true" data-i18n="tab.events">Events</button>
+          <button type="button" class="activity-tab" data-activity-tab="conversations" role="tab" aria-selected="false" data-i18n="tab.conversations">Conversations</button>
+        </div>
+        <div class="events-toolbar-actions">
+          <button id="conversation-preview-btn" type="button" class="preview-toggle hidden" aria-pressed="false" data-i18n="preview.titles">Fetch Titles (Preview)</button>
+          <span id="preview-status" class="preview-status muted small hidden" aria-live="polite"></span>
+          <button id="export-csv" type="button" data-i18n="export.csv">Export CSV</button>
+        </div>
+      </div>
+    </div>
+    <div id="section-body-events" class="section-body">
+      <p id="archive-note" class="muted small hidden"></p>
+      <div id="events-panel" class="activity-panel">
+        <div class="table-scroll">
+          <table id="events-table">
+          <thead>
+            <tr>
+              <th data-sort="timestamp" class="sortable" data-i18n="col.date">Date</th>
+              <th data-sort="kind" class="sortable" data-i18n="col.type">Type</th>
+              <th data-sort="model" class="sortable" data-i18n="col.model">Model</th>
+              <th data-sort="totalTokens" class="sortable num" data-i18n="col.tokens">Tokens</th>
+              <th data-sort="requests" class="sortable num" data-i18n="col.requests">Requests</th>
+              <th data-sort="spendCents" class="sortable num" data-i18n="col.spend">Spend</th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </div>
+      <div class="pagination" id="pagination"></div>
+      </div>
+      <div id="conversations-panel" class="activity-panel hidden">
+        <div class="table-scroll">
+          <table id="conversations-table">
+            <thead>
+              <tr>
+                <th data-sort="label" class="sortable" data-i18n="col.conversation">Conversation</th>
+                <th data-sort="lastTimestamp" class="sortable" data-i18n="col.lastActive">Last active</th>
+                <th data-sort="models" class="sortable" data-i18n="col.models">Models</th>
+                <th data-sort="eventCount" class="sortable num" data-i18n="col.calls">Calls</th>
+                <th data-sort="totalTokens" class="sortable num" data-i18n="col.tokens">Tokens</th>
+                <th data-sort="requests" class="sortable num" data-i18n="col.requests">Requests</th>
+                <th data-sort="spendCents" class="sortable num" data-i18n="col.spend">Spend</th>
+              </tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+        </div>
+        <div class="pagination" id="conversations-pagination"></div>
+      </div>
+    </div>
+  </section>
+  </div>
+  <div id="event-detail-overlay" class="event-detail-overlay hidden">
+    <div class="event-detail-panel" role="dialog" aria-modal="true" aria-labelledby="event-detail-title">
+      <div class="event-detail-header">
+        <div>
+          <h2 id="event-detail-title" data-i18n="event.details">Event details</h2>
+          <p id="event-detail-subtitle" class="muted small"></p>
+        </div>
+        <button id="event-detail-close" type="button" tabindex="-1" aria-label="Close event details" data-i18n-aria="closeEventDetails">×</button>
+      </div>
+      <div id="event-detail-body" class="event-detail-body"></div>
+    </div>
+  </div>
+
+  <script nonce="screenshot-nonce">
+  document.documentElement.classList.add("screenshot-preview");
+  window.__SCREENSHOT_TAB__ = "activity";
+  window.acquireVsCodeApi = () => ({
+    getState: () => ({"locale":"it","currency":"eur","range":"billingCycle","usageFilter":"all","metric":"tokens","mainTab":"activity","pricingPinnedIds":["auto","claude-4.6-sonnet","gpt-5.4"],"pricingSortKey":"displayName","pricingSortOrder":"asc","pricingExpandedId":"claude-4.6-sonnet"}),
+    setState: () => {},
+    postMessage: (msg) => {
+      if (msg?.type === "ready") {
+        window.postMessage({ type: "uiPreferences", preferences: {"range":"billingCycle","usageFilter":"all","metric":"tokens","pricingPinnedIds":["auto","claude-4.6-sonnet","gpt-5.4"]} }, "*");
+        window.postMessage({ type: "init", locale: "it" }, "*");
+        window.postMessage({ type: "initCurrency", currency: "eur" }, "*");
+        window.postMessage({ type: "state", state: {"generatedAt":1784025000000,"data":{"includedRequests":{"used":500,"limit":500},"onDemand":{"state":"limited","onDemandEnabled":true,"spendDollars":12.5,"limitDollars":200},"poolUsage":{"autoPercentUsed":61.4,"apiPercentUsed":38.2,"totalPercentUsed":49.8},"resetsAt":"2026-08-02T15:37:46.000Z","planInfo":{"tier":"Teams","accountType":"team","planKind":"teams","displayName":"Cursor Teams","priceLabel":"40 € / mese"}},"events":[{"timestamp":1783000800000,"model":"default","kind":"Included","totalTokens":820000,"requests":3,"spendCents":180,"maxMode":false,"inputTokens":500000,"outputTokens":300000,"cacheWriteTokens":10000,"cacheReadTokens":10000,"tokenCostCents":170,"cursorTokenFee":10,"isTokenBasedCall":true,"isHeadless":false,"isChargeable":true,"conversationId":"conv-auto"},{"timestamp":1783004400000,"model":"claude-4.6-sonnet","kind":"Included","totalTokens":210000,"requests":1,"spendCents":95,"maxMode":false,"inputTokens":120000,"outputTokens":80000,"cacheWriteTokens":5000,"cacheReadTokens":5000,"tokenCostCents":90,"cursorTokenFee":5,"isTokenBasedCall":true,"isHeadless":false,"isChargeable":true,"conversationId":"conv-api"},{"timestamp":1783008000000,"model":"gpt-5.4","kind":"On-Demand","totalTokens":45000,"requests":1,"spendCents":320,"maxMode":false,"inputTokens":20000,"outputTokens":22000,"cacheWriteTokens":2000,"cacheReadTokens":1000,"tokenCostCents":300,"cursorTokenFee":20,"isTokenBasedCall":true,"isHeadless":false,"isChargeable":true,"conversationId":null},{"timestamp":1783087200000,"model":"default","kind":"Included","totalTokens":832000,"requests":3,"spendCents":188,"maxMode":false,"inputTokens":500000,"outputTokens":300000,"cacheWriteTokens":10000,"cacheReadTokens":10000,"tokenCostCents":170,"cursorTokenFee":10,"isTokenBasedCall":true,"isHeadless":false,"isChargeable":true,"conversationId":"conv-auto"},{"timestamp":1783090800000,"model":"claude-4.6-sonnet","kind":"Included","totalTokens":214000,"requests":1,"spendCents":95,"maxMode":false,"inputTokens":120000,"outputTokens":80000,"cacheWriteTokens":5000,"cacheReadTokens":5000,"tokenCostCents":90,"cursorTokenFee":5,"isTokenBasedCall":true,"isHeadless":false,"isChargeable":true,"conversationId":"conv-api"},{"timestamp":1783094400000,"model":"gpt-5.4","kind":"On-Demand","totalTokens":45000,"requests":1,"spendCents":320,"maxMode":false,"inputTokens":20000,"outputTokens":22000,"cacheWriteTokens":2000,"cacheReadTokens":1000,"tokenCostCents":300,"cursorTokenFee":20,"isTokenBasedCall":true,"isHeadless":false,"isChargeable":true,"conversationId":null},{"timestamp":1783173600000,"model":"default","kind":"Included","totalTokens":844000,"requests":3,"spendCents":196,"maxMode":false,"inputTokens":500000,"outputTokens":300000,"cacheWriteTokens":10000,"cacheReadTokens":10000,"tokenCostCents":170,"cursorTokenFee":10,"isTokenBasedCall":true,"isHeadless":false,"isChargeable":true,"conversationId":"conv-auto"},{"timestamp":1783177200000,"model":"claude-4.6-sonnet","kind":"Included","totalTokens":218000,"requests":1,"spendCents":95,"maxMode":false,"inputTokens":120000,"outputTokens":80000,"cacheWriteTokens":5000,"cacheReadTokens":5000,"tokenCostCents":90,"cursorTokenFee":5,"isTokenBasedCall":true,"isHeadless":false,"isChargeable":true,"conversationId":"conv-api"},{"timestamp":1783180800000,"model":"gpt-5.4","kind":"On-Demand","totalTokens":45000,"requests":1,"spendCents":320,"maxMode":false,"inputTokens":20000,"outputTokens":22000,"cacheWriteTokens":2000,"cacheReadTokens":1000,"tokenCostCents":300,"cursorTokenFee":20,"isTokenBasedCall":true,"isHeadless":false,"isChargeable":true,"conversationId":null},{"timestamp":1783260000000,"model":"default","kind":"Included","totalTokens":856000,"requests":3,"spendCents":204,"maxMode":false,"inputTokens":500000,"outputTokens":300000,"cacheWriteTokens":10000,"cacheReadTokens":10000,"tokenCostCents":170,"cursorTokenFee":10,"isTokenBasedCall":true,"isHeadless":false,"isChargeable":true,"conversationId":"conv-auto"},{"timestamp":1783263600000,"model":"claude-4.6-sonnet","kind":"Included","totalTokens":222000,"requests":1,"spendCents":95,"maxMode":false,"inputTokens":120000,"outputTokens":80000,"cacheWriteTokens":5000,"cacheReadTokens":5000,"tokenCostCents":90,"cursorTokenFee":5,"isTokenBasedCall":true,"isHeadless":false,"isChargeable":true,"conversationId":"conv-api"},{"timestamp":1783267200000,"model":"gpt-5.4","kind":"On-Demand","totalTokens":45000,"requests":1,"spendCents":320,"maxMode":false,"inputTokens":20000,"outputTokens":22000,"cacheWriteTokens":2000,"cacheReadTokens":1000,"tokenCostCents":300,"cursorTokenFee":20,"isTokenBasedCall":true,"isHeadless":false,"isChargeable":true,"conversationId":null},{"timestamp":1783346400000,"model":"default","kind":"Included","totalTokens":868000,"requests":3,"spendCents":212,"maxMode":false,"inputTokens":500000,"outputTokens":300000,"cacheWriteTokens":10000,"cacheReadTokens":10000,"tokenCostCents":170,"cursorTokenFee":10,"isTokenBasedCall":true,"isHeadless":false,"isChargeable":true,"conversationId":"conv-auto"},{"timestamp":1783350000000,"model":"claude-4.6-sonnet","kind":"Included","totalTokens":226000,"requests":1,"spendCents":95,"maxMode":false,"inputTokens":120000,"outputTokens":80000,"cacheWriteTokens":5000,"cacheReadTokens":5000,"tokenCostCents":90,"cursorTokenFee":5,"isTokenBasedCall":true,"isHeadless":false,"isChargeable":true,"conversationId":"conv-api"},{"timestamp":1783353600000,"model":"gpt-5.4","kind":"On-Demand","totalTokens":45000,"requests":1,"spendCents":320,"maxMode":false,"inputTokens":20000,"outputTokens":22000,"cacheWriteTokens":2000,"cacheReadTokens":1000,"tokenCostCents":300,"cursorTokenFee":20,"isTokenBasedCall":true,"isHeadless":false,"isChargeable":true,"conversationId":null},{"timestamp":1783432800000,"model":"default","kind":"Included","totalTokens":880000,"requests":3,"spendCents":220,"maxMode":false,"inputTokens":500000,"outputTokens":300000,"cacheWriteTokens":10000,"cacheReadTokens":10000,"tokenCostCents":170,"cursorTokenFee":10,"isTokenBasedCall":true,"isHeadless":false,"isChargeable":true,"conversationId":"conv-auto"},{"timestamp":1783436400000,"model":"claude-4.6-sonnet","kind":"Included","totalTokens":230000,"requests":1,"spendCents":95,"maxMode":false,"inputTokens":120000,"outputTokens":80000,"cacheWriteTokens":5000,"cacheReadTokens":5000,"tokenCostCents":90,"cursorTokenFee":5,"isTokenBasedCall":true,"isHeadless":false,"isChargeable":true,"conversationId":"conv-api"},{"timestamp":1783440000000,"model":"gpt-5.4","kind":"On-Demand","totalTokens":45000,"requests":1,"spendCents":320,"maxMode":false,"inputTokens":20000,"outputTokens":22000,"cacheWriteTokens":2000,"cacheReadTokens":1000,"tokenCostCents":300,"cursorTokenFee":20,"isTokenBasedCall":true,"isHeadless":false,"isChargeable":true,"conversationId":null},{"timestamp":1783519200000,"model":"default","kind":"Included","totalTokens":892000,"requests":3,"spendCents":228,"maxMode":false,"inputTokens":500000,"outputTokens":300000,"cacheWriteTokens":10000,"cacheReadTokens":10000,"tokenCostCents":170,"cursorTokenFee":10,"isTokenBasedCall":true,"isHeadless":false,"isChargeable":true,"conversationId":"conv-auto"},{"timestamp":1783522800000,"model":"claude-4.6-sonnet","kind":"Included","totalTokens":234000,"requests":1,"spendCents":95,"maxMode":false,"inputTokens":120000,"outputTokens":80000,"cacheWriteTokens":5000,"cacheReadTokens":5000,"tokenCostCents":90,"cursorTokenFee":5,"isTokenBasedCall":true,"isHeadless":false,"isChargeable":true,"conversationId":"conv-api"},{"timestamp":1783526400000,"model":"gpt-5.4","kind":"On-Demand","totalTokens":45000,"requests":1,"spendCents":320,"maxMode":false,"inputTokens":20000,"outputTokens":22000,"cacheWriteTokens":2000,"cacheReadTokens":1000,"tokenCostCents":300,"cursorTokenFee":20,"isTokenBasedCall":true,"isHeadless":false,"isChargeable":true,"conversationId":null},{"timestamp":1783605600000,"model":"default","kind":"Included","totalTokens":904000,"requests":3,"spendCents":236,"maxMode":false,"inputTokens":500000,"outputTokens":300000,"cacheWriteTokens":10000,"cacheReadTokens":10000,"tokenCostCents":170,"cursorTokenFee":10,"isTokenBasedCall":true,"isHeadless":false,"isChargeable":true,"conversationId":"conv-auto"},{"timestamp":1783609200000,"model":"claude-4.6-sonnet","kind":"Included","totalTokens":238000,"requests":1,"spendCents":95,"maxMode":false,"inputTokens":120000,"outputTokens":80000,"cacheWriteTokens":5000,"cacheReadTokens":5000,"tokenCostCents":90,"cursorTokenFee":5,"isTokenBasedCall":true,"isHeadless":false,"isChargeable":true,"conversationId":"conv-api"},{"timestamp":1783612800000,"model":"gpt-5.4","kind":"On-Demand","totalTokens":45000,"requests":1,"spendCents":320,"maxMode":false,"inputTokens":20000,"outputTokens":22000,"cacheWriteTokens":2000,"cacheReadTokens":1000,"tokenCostCents":300,"cursorTokenFee":20,"isTokenBasedCall":true,"isHeadless":false,"isChargeable":true,"conversationId":null},{"timestamp":1783692000000,"model":"default","kind":"Included","totalTokens":916000,"requests":3,"spendCents":244,"maxMode":false,"inputTokens":500000,"outputTokens":300000,"cacheWriteTokens":10000,"cacheReadTokens":10000,"tokenCostCents":170,"cursorTokenFee":10,"isTokenBasedCall":true,"isHeadless":false,"isChargeable":true,"conversationId":"conv-auto"},{"timestamp":1783695600000,"model":"claude-4.6-sonnet","kind":"Included","totalTokens":242000,"requests":1,"spendCents":95,"maxMode":false,"inputTokens":120000,"outputTokens":80000,"cacheWriteTokens":5000,"cacheReadTokens":5000,"tokenCostCents":90,"cursorTokenFee":5,"isTokenBasedCall":true,"isHeadless":false,"isChargeable":true,"conversationId":"conv-api"},{"timestamp":1783699200000,"model":"gpt-5.4","kind":"On-Demand","totalTokens":45000,"requests":1,"spendCents":320,"maxMode":false,"inputTokens":20000,"outputTokens":22000,"cacheWriteTokens":2000,"cacheReadTokens":1000,"tokenCostCents":300,"cursorTokenFee":20,"isTokenBasedCall":true,"isHeadless":false,"isChargeable":true,"conversationId":null},{"timestamp":1783778400000,"model":"default","kind":"Included","totalTokens":928000,"requests":3,"spendCents":252,"maxMode":false,"inputTokens":500000,"outputTokens":300000,"cacheWriteTokens":10000,"cacheReadTokens":10000,"tokenCostCents":170,"cursorTokenFee":10,"isTokenBasedCall":true,"isHeadless":false,"isChargeable":true,"conversationId":"conv-auto"},{"timestamp":1783782000000,"model":"claude-4.6-sonnet","kind":"Included","totalTokens":246000,"requests":1,"spendCents":95,"maxMode":false,"inputTokens":120000,"outputTokens":80000,"cacheWriteTokens":5000,"cacheReadTokens":5000,"tokenCostCents":90,"cursorTokenFee":5,"isTokenBasedCall":true,"isHeadless":false,"isChargeable":true,"conversationId":"conv-api"},{"timestamp":1783785600000,"model":"gpt-5.4","kind":"On-Demand","totalTokens":45000,"requests":1,"spendCents":320,"maxMode":false,"inputTokens":20000,"outputTokens":22000,"cacheWriteTokens":2000,"cacheReadTokens":1000,"tokenCostCents":300,"cursorTokenFee":20,"isTokenBasedCall":true,"isHeadless":false,"isChargeable":true,"conversationId":null},{"timestamp":1783864800000,"model":"default","kind":"Included","totalTokens":940000,"requests":3,"spendCents":260,"maxMode":false,"inputTokens":500000,"outputTokens":300000,"cacheWriteTokens":10000,"cacheReadTokens":10000,"tokenCostCents":170,"cursorTokenFee":10,"isTokenBasedCall":true,"isHeadless":false,"isChargeable":true,"conversationId":"conv-auto"},{"timestamp":1783868400000,"model":"claude-4.6-sonnet","kind":"Included","totalTokens":250000,"requests":1,"spendCents":95,"maxMode":false,"inputTokens":120000,"outputTokens":80000,"cacheWriteTokens":5000,"cacheReadTokens":5000,"tokenCostCents":90,"cursorTokenFee":5,"isTokenBasedCall":true,"isHeadless":false,"isChargeable":true,"conversationId":"conv-api"},{"timestamp":1783872000000,"model":"gpt-5.4","kind":"On-Demand","totalTokens":45000,"requests":1,"spendCents":320,"maxMode":false,"inputTokens":20000,"outputTokens":22000,"cacheWriteTokens":2000,"cacheReadTokens":1000,"tokenCostCents":300,"cursorTokenFee":20,"isTokenBasedCall":true,"isHeadless":false,"isChargeable":true,"conversationId":null},{"timestamp":1783951200000,"model":"default","kind":"Included","totalTokens":952000,"requests":3,"spendCents":268,"maxMode":false,"inputTokens":500000,"outputTokens":300000,"cacheWriteTokens":10000,"cacheReadTokens":10000,"tokenCostCents":170,"cursorTokenFee":10,"isTokenBasedCall":true,"isHeadless":false,"isChargeable":true,"conversationId":"conv-auto"},{"timestamp":1783954800000,"model":"claude-4.6-sonnet","kind":"Included","totalTokens":254000,"requests":1,"spendCents":95,"maxMode":false,"inputTokens":120000,"outputTokens":80000,"cacheWriteTokens":5000,"cacheReadTokens":5000,"tokenCostCents":90,"cursorTokenFee":5,"isTokenBasedCall":true,"isHeadless":false,"isChargeable":true,"conversationId":"conv-api"},{"timestamp":1783958400000,"model":"gpt-5.4","kind":"On-Demand","totalTokens":45000,"requests":1,"spendCents":320,"maxMode":false,"inputTokens":20000,"outputTokens":22000,"cacheWriteTokens":2000,"cacheReadTokens":1000,"tokenCostCents":300,"cursorTokenFee":20,"isTokenBasedCall":true,"isHeadless":false,"isChargeable":true,"conversationId":null}],"dailySpend":[],"resetsAt":"2026-08-02T15:37:46.000Z","isTeamMember":false,"showPremiumRequests":false,"quotaAwareEventDisplay":true,"poolUsageSeries":{"labels":["Jul 2","Jul 3","Jul 4","Jul 5","Jul 6","Jul 7","Jul 8","Jul 9","Jul 10","Jul 11","Jul 12","Jul 13","Jul 14"],"dayMs":[1782950400000,1783036800000,1783123200000,1783209600000,1783296000000,1783382400000,1783468800000,1783555200000,1783641600000,1783728000000,1783814400000,1783900800000,1783987200000],"autoPercent":[0,4.602551834130781,9.400956937799043,14.395215311004783,19.585326953748005,24.971291866028707,30.55311004784689,36.33078149920255,42.3043062200957,48.473684210526315,54.83891547049441,61.39999999999999,61.39999999999999],"apiPercent":[0,3.472727272727273,6.945454545454546,10.41818181818182,13.890909090909092,17.363636363636367,20.83636363636364,24.309090909090912,27.781818181818185,31.254545454545458,34.727272727272734,38.20000000000001,38.20000000000001],"dailyAutoPercent":[0,4.602551834130781,4.798405103668261,4.994258373205741,5.190111642743221,5.385964912280701,5.581818181818182,5.777671451355662,5.973524720893142,6.169377990430622,6.365231259968102,6.561084529505582,0],"dailyApiPercent":[0,3.472727272727273,3.472727272727273,3.472727272727273,3.472727272727273,3.472727272727273,3.472727272727273,3.472727272727273,3.472727272727273,3.472727272727273,3.472727272727273,3.472727272727273,0],"dailyAutoPace":[{"allowance":3.125,"used":0,"residual":3.125},{"allowance":3.225806451612903,"used":4.602551834130781,"residual":-1.3767453825178784},{"allowance":3.1799149388623076,"used":4.798405103668261,"residual":-1.6184901648059538},{"allowance":3.1241049331793436,"used":4.994258373205741,"residual":-1.8701534400263977},{"allowance":3.057313738892686,"used":5.190111642743221,"residual":-2.1327979038505354},{"allowance":2.978321223935259,"used":5.385964912280701,"residual":-2.407643688345442},{"allowance":2.8857195436142806,"used":5.581818181818182,"residual":-2.6960986382039014},{"allowance":2.7778755980861245,"used":5.777671451355662,"residual":-2.9997958532695375},{"allowance":2.652884104199894,"used":5.973524720893142,"residual":-3.320640616693248},{"allowance":2.5085084252132304,"used":6.169377990430622,"residual":-3.6608695652173915},{"allowance":2.3421052631578947,"used":6.365231259968102,"residual":-4.023125996810207},{"allowance":2.1505278347383614,"used":6.561084529505582,"residual":-4.41055669476722},{"allowance":1.9300000000000004,"used":0,"residual":1.9300000000000004}],"dailyApiPace":[{"allowance":3.125,"used":0,"residual":3.125},{"allowance":3.225806451612903,"used":3.472727272727273,"residual":-0.24692082111437008},{"allowance":3.2175757575757578,"used":3.472727272727273,"residual":-0.25515151515151535},{"allowance":3.2087774294670846,"used":3.472727272727273,"residual":-0.26394984326018855},{"allowance":3.199350649350649,"used":3.472727272727273,"residual":-0.27337662337662394},{"allowance":3.189225589225589,"used":3.472727272727273,"residual":-0.2835016835016839},{"allowance":3.178321678321678,"used":3.472727272727273,"residual":-0.2944055944055952},{"allowance":3.1665454545454543,"used":3.472727272727273,"residual":-0.3061818181818188},{"allowance":3.153787878787879,"used":3.472727272727273,"residual":-0.3189393939393943},{"allowance":3.139920948616601,"used":3.472727272727273,"residual":-0.33280632411067224},{"allowance":3.1247933884297523,"used":3.472727272727273,"residual":-0.3479338842975208},{"allowance":3.108225108225108,"used":3.472727272727273,"residual":-0.3645021645021651},{"allowance":3.0899999999999994,"used":0,"residual":3.0899999999999994}],"todayAutoPace":{"allowance":1.9300000000000004,"used":0,"residual":1.9300000000000004},"todayApiPace":{"allowance":3.0899999999999994,"used":0,"residual":3.0899999999999994}},"poolDepletion":{"auto":{"pool":"auto","projectedAtIso":"2026-07-21T20:19:50.429Z","avgDailyPercent":5.20944994471362,"status":"ok"},"api":{"pool":"api","projectedAtIso":"2026-08-02T12:07:41.811Z","avgDailyPercent":3.241058434658963,"status":"ok"}},"poolRecommended":{"autoRecommended":38.020235961768215,"apiRecommended":38.020235961768215},"modelPricing":{"catalog":{"sourceUrl":"https://cursor.com/docs/models-and-pricing","lastUpdated":"2026-07-11","cursorTokenRatePerMillion":0.25,"plans":[{"id":"pro","name":"Pro","priceMonthly":20,"apiUsageIncluded":20},{"id":"pro-plus","name":"Pro Plus","priceMonthly":60,"apiUsageIncluded":70},{"id":"ultra","name":"Ultra","priceMonthly":200,"apiUsageIncluded":400}],"models":[{"id":"auto","displayName":"Auto","provider":"Cursor","pool":"firstParty","rates":{"inputPlusCacheWrite":1.25,"output":6,"cacheRead":0.25},"aliases":["default"]},{"id":"composer-2.5","displayName":"Composer 2.5","provider":"Cursor","pool":"firstParty","rates":{"input":0.5,"cacheRead":0.2,"output":2.5},"aliases":["composer-2","composer-2-5"],"variants":[{"id":"fast","label":"Fast","aliases":["composer-2.5-fast","composer-2-5-fast"],"priceImpact":"sameRateMoreTokens","description":"Same $/M rates; faster responses may use more tokens"}],"docsUrl":"https://cursor.com/blog/composer-2-5"},{"id":"grok-4.5","displayName":"Cursor Grok 4.5","provider":"Cursor","pool":"firstParty","rates":{"input":2,"cacheRead":0.5,"output":6},"aliases":["cursor-grok-4.5","grok-4-5","cursor-grok-4-5"],"variants":[{"id":"high","label":"High","aliases":["cursor-grok-4.5-high","grok-4.5-high","cursor-grok-4-5-high"],"priceImpact":"sameRateMoreTokens","description":"Same $/M rates; higher reasoning effort uses more tokens"}]},{"id":"claude-4-sonnet","displayName":"Claude 4 Sonnet","provider":"Anthropic","pool":"api","rates":{"input":3,"cacheWrite":3.75,"cacheRead":0.3,"output":15},"hidden":true,"variants":[{"id":"thinking","label":"Thinking","aliases":["claude-4-sonnet-thinking"],"priceImpact":"sameRateMoreTokens","description":"Same $/M rates; more reasoning tokens billed as output","legacyNote":"2× requests on legacy request-based plans"}]},{"id":"claude-4-sonnet-1m","displayName":"Claude 4 Sonnet 1M","provider":"Anthropic","pool":"api","rates":{"input":6,"cacheWrite":7.5,"cacheRead":0.6,"output":22.5},"hidden":true,"variants":[{"id":"thinking","label":"Thinking","priceImpact":"sameRateMoreTokens","legacyNote":"2× requests on legacy request-based plans"},{"id":"long-context","label":"Input > 200k","priceImpact":"inputMultiplier","inputRateMultiplier":2,"description":"2× input rates when context exceeds 200k tokens"}]},{"id":"claude-4.5-haiku","displayName":"Claude 4.5 Haiku","provider":"Anthropic","pool":"api","rates":{"input":1,"cacheWrite":1.25,"cacheRead":0.1,"output":5},"hidden":true,"aliases":["claude-4-5-haiku"]},{"id":"claude-4.5-opus","displayName":"Claude 4.5 Opus","provider":"Anthropic","pool":"api","rates":{"input":5,"cacheWrite":6.25,"cacheRead":0.5,"output":25},"hidden":true,"aliases":["claude-4-5-opus"]},{"id":"claude-4.5-sonnet","displayName":"Claude 4.5 Sonnet","provider":"Anthropic","pool":"api","rates":{"input":3,"cacheWrite":3.75,"cacheRead":0.3,"output":15},"hidden":true,"aliases":["claude-4-5-sonnet"]},{"id":"claude-4.6-opus","displayName":"Claude 4.6 Opus","provider":"Anthropic","pool":"api","rates":{"input":5,"cacheWrite":6.25,"cacheRead":0.5,"output":25},"hidden":true,"aliases":["claude-4-6-opus"],"variants":[{"id":"high","label":"High","aliases":["claude-4.6-opus-high"],"priceImpact":"sameRateMoreTokens","description":"Same $/M; higher reasoning effort uses more tokens"},{"id":"high-thinking","label":"High + Thinking","aliases":["claude-4.6-opus-high-thinking"],"priceImpact":"sameRateMoreTokens","description":"Same $/M; extended reasoning increases output tokens"}]},{"id":"claude-4.6-sonnet","displayName":"Claude 4.6 Sonnet","provider":"Anthropic","pool":"api","rates":{"input":3,"cacheWrite":3.75,"cacheRead":0.3,"output":15},"hidden":true,"aliases":["claude-4-6-sonnet"],"variants":[{"id":"medium-thinking","label":"Medium + Thinking","aliases":["claude-4.6-sonnet-medium-thinking"],"priceImpact":"sameRateMoreTokens","description":"Same $/M; thinking tokens add to output usage"}]},{"id":"claude-4.7-opus","displayName":"Claude 4.7 Opus","provider":"Anthropic","pool":"api","rates":{"input":5,"cacheWrite":6.25,"cacheRead":0.5,"output":25},"hidden":true,"aliases":["claude-4-7-opus"]},{"id":"claude-fable-5","displayName":"Claude Fable 5","provider":"Anthropic","pool":"api","rates":{"input":10,"cacheWrite":12.5,"cacheRead":1,"output":50},"aliases":[],"variants":[{"id":"thinking","label":"Thinking","aliases":["claude-fable-5-thinking","claude-fable-5-thinking-high","claude-fable-5-thinking-xhigh"],"priceImpact":"sameRateMoreTokens"}]},{"id":"claude-opus-4.7-fast","displayName":"Claude Opus 4.7 (fast mode)","provider":"Anthropic","pool":"api","rates":{"input":30,"cacheWrite":37.5,"cacheRead":3,"output":150},"hidden":true,"aliases":["claude-opus-4-7-fast"]},{"id":"claude-opus-4.8","displayName":"Claude Opus 4.8","provider":"Anthropic","pool":"api","rates":{"input":5,"cacheWrite":6.25,"cacheRead":0.5,"output":25},"aliases":["claude-opus-4-8"],"variants":[{"id":"fast","label":"Fast","aliases":["claude-opus-4-8-fast"],"priceImpact":"customRates","rates":{"input":10,"cacheWrite":12.5,"cacheRead":1,"output":50},"description":"3× cheaper per token than Opus 4.7 fast ($30/M input)"},{"id":"max-long-context","label":"Max Mode (1M)","priceImpact":"sameRateMoreTokens","requiresMaxMode":true,"description":"Same per-token rates up to 1M context"}]},{"id":"claude-sonnet-5","displayName":"Claude Sonnet 5","provider":"Anthropic","pool":"api","rates":{"input":3,"cacheWrite":3.75,"cacheRead":0.3,"output":15},"aliases":[],"variants":[{"id":"thinking","label":"Thinking","aliases":["claude-sonnet-5-thinking"],"priceImpact":"sameRateMoreTokens"},{"id":"promo","label":"Launch promo (until Aug 2026)","priceImpact":"customRates","rates":{"input":2,"cacheWrite":2.5,"cacheRead":0.3,"output":10},"description":"Promotional rates through August 31, 2026"}],"notes":"Launch promo: $2/M input and $10/M output through Aug 31, 2026"},{"id":"composer-1","displayName":"Composer 1","provider":"Cursor","pool":"api","rates":{"input":1.25,"cacheRead":0.125,"output":10},"hidden":true},{"id":"gemini-2.5-flash","displayName":"Gemini 2.5 Flash","provider":"Google","pool":"api","rates":{"input":0.3,"cacheRead":0.03,"output":2.5},"hidden":true},{"id":"gemini-3-flash","displayName":"Gemini 3 Flash","provider":"Google","pool":"api","rates":{"input":0.5,"cacheRead":0.05,"output":3},"hidden":true},{"id":"gemini-3-pro","displayName":"Gemini 3 Pro","provider":"Google","pool":"api","rates":{"input":2,"cacheRead":0.2,"output":12},"hidden":true},{"id":"gemini-3-pro-image-preview","displayName":"Gemini 3 Pro Image Preview","provider":"Google","pool":"api","rates":{"input":2,"cacheRead":0.2,"output":12},"hidden":true,"notes":"Image output: $120/1M tokens"},{"id":"gemini-3.1-pro","displayName":"Gemini 3.1 Pro","provider":"Google","pool":"api","rates":{"input":2,"cacheRead":0.2,"output":12},"aliases":["gemini-3-1-pro"]},{"id":"gemini-3.5-flash","displayName":"Gemini 3.5 Flash","provider":"Google","pool":"api","rates":{"input":1.5,"cacheRead":0.15,"output":9},"aliases":["gemini-3-5-flash"]},{"id":"glm-5.2","displayName":"GLM 5.2","provider":"Z.ai","pool":"api","rates":{"input":1.4,"cacheRead":0.26,"output":4.4},"hidden":true,"aliases":["glm-5-2"]},{"id":"gpt-5","displayName":"GPT-5","provider":"OpenAI","pool":"api","rates":{"input":1.25,"cacheRead":0.125,"output":10},"hidden":true,"variants":[{"id":"high","label":"High reasoning","aliases":["gpt-5-high"],"priceImpact":"sameRateMoreTokens","description":"Same $/M; more reasoning tokens consumed"},{"id":"fast","label":"Fast","priceImpact":"separateModel","separateModelId":"gpt-5-fast","description":"2× per-token rates vs GPT-5"}]},{"id":"gpt-5-fast","displayName":"GPT-5 Fast","provider":"OpenAI","pool":"api","rates":{"input":2.5,"cacheRead":0.25,"output":20},"hidden":true,"aliases":["gpt-5-high-fast","gpt-5-low-fast"]},{"id":"gpt-5-mini","displayName":"GPT-5 Mini","provider":"OpenAI","pool":"api","rates":{"input":0.25,"cacheRead":0.025,"output":2},"hidden":true},{"id":"gpt-5-codex","displayName":"GPT-5-Codex","provider":"OpenAI","pool":"api","rates":{"input":1.25,"cacheRead":0.125,"output":10},"hidden":true},{"id":"gpt-5.1-codex","displayName":"GPT-5.1 Codex","provider":"OpenAI","pool":"api","rates":{"input":1.25,"cacheRead":0.125,"output":10},"hidden":true,"aliases":["gpt-5-1-codex"]},{"id":"gpt-5.1-codex-max","displayName":"GPT-5.1 Codex Max","provider":"OpenAI","pool":"api","rates":{"input":1.25,"cacheRead":0.125,"output":10},"hidden":true,"aliases":["gpt-5-1-codex-max"]},{"id":"gpt-5.1-codex-mini","displayName":"GPT-5.1 Codex Mini","provider":"OpenAI","pool":"api","rates":{"input":0.25,"cacheRead":0.025,"output":2},"hidden":true,"aliases":["gpt-5-1-codex-mini"]},{"id":"gpt-5.2","displayName":"GPT-5.2","provider":"OpenAI","pool":"api","rates":{"input":1.75,"cacheRead":0.175,"output":14},"hidden":true,"variants":[{"id":"high","label":"High reasoning","aliases":["gpt-5.2-high"],"priceImpact":"sameRateMoreTokens"}]},{"id":"gpt-5.2-codex","displayName":"GPT-5.2 Codex","provider":"OpenAI","pool":"api","rates":{"input":1.75,"cacheRead":0.175,"output":14},"hidden":true},{"id":"gpt-5.3-codex","displayName":"GPT-5.3 Codex","provider":"OpenAI","pool":"api","rates":{"input":1.75,"cacheRead":0.175,"output":14},"hidden":true,"variants":[{"id":"high","label":"High reasoning","aliases":["gpt-5.3-codex-high"],"priceImpact":"sameRateMoreTokens"}]},{"id":"gpt-5.4","displayName":"GPT-5.4","provider":"OpenAI","pool":"api","rates":{"input":2.5,"cacheRead":0.25,"output":15},"hidden":true,"variants":[{"id":"high","label":"High reasoning","aliases":["gpt-5.4-high"],"priceImpact":"sameRateMoreTokens"},{"id":"fast","label":"Fast","priceImpact":"rateMultiplier","rateMultiplier":2,"description":"15% faster, 2× per-token rates"},{"id":"max-long-context","label":"Max Mode (1M)","priceImpact":"inputMultiplier","inputRateMultiplier":2,"requiresMaxMode":true,"description":"2× input rates with up to 1M context"}]},{"id":"gpt-5.4-mini","displayName":"GPT-5.4 Mini","provider":"OpenAI","pool":"api","rates":{"input":0.75,"cacheRead":0.075,"output":4.5},"hidden":true},{"id":"gpt-5.4-nano","displayName":"GPT-5.4 Nano","provider":"OpenAI","pool":"api","rates":{"input":0.2,"cacheRead":0.02,"output":1.25},"hidden":true},{"id":"gpt-5.5","displayName":"GPT-5.5","provider":"OpenAI","pool":"api","rates":{"input":5,"cacheRead":0.5,"output":30},"hidden":true,"variants":[{"id":"fast","label":"Fast","priceImpact":"rateMultiplier","rateMultiplier":2,"description":"Higher per-token rates for faster responses"},{"id":"max-long-context","label":"Max Mode (1M)","priceImpact":"inputMultiplier","inputRateMultiplier":2,"requiresMaxMode":true}]},{"id":"gpt-5.6-luna","displayName":"GPT-5.6 Luna","provider":"OpenAI","pool":"api","rates":{"input":1,"cacheWrite":1.25,"cacheRead":0.1,"output":6},"aliases":["gpt-5-6-luna"],"variants":[{"id":"medium","label":"Medium","aliases":["gpt-5.6-luna-medium","gpt-5-6-luna-medium"],"priceImpact":"sameRateMoreTokens"},{"id":"fast","label":"Fast","priceImpact":"rateMultiplier","rateMultiplier":2}]},{"id":"gpt-5.6-sol","displayName":"GPT-5.6 Sol","provider":"OpenAI","pool":"api","rates":{"input":5,"cacheWrite":6.25,"cacheRead":0.5,"output":30},"aliases":["gpt-5-6-sol"],"variants":[{"id":"fast","label":"Fast","priceImpact":"rateMultiplier","rateMultiplier":2},{"id":"max-long-context","label":"Max Mode (1M)","priceImpact":"inputMultiplier","inputRateMultiplier":2,"requiresMaxMode":true}]},{"id":"gpt-5.6-terra","displayName":"GPT-5.6 Terra","provider":"OpenAI","pool":"api","rates":{"input":2.5,"cacheWrite":3.125,"cacheRead":0.25,"output":15},"aliases":["gpt-5-6-terra"],"variants":[{"id":"medium","label":"Medium","aliases":["gpt-5.6-terra-medium","gpt-5-6-terra-medium"],"priceImpact":"sameRateMoreTokens"},{"id":"fast","label":"Fast","priceImpact":"rateMultiplier","rateMultiplier":2}]},{"id":"kimi-k2.7-code","displayName":"Kimi K2.7 Code","provider":"Moonshot","pool":"api","rates":{"input":0.95,"cacheRead":0.19,"output":4},"hidden":true,"aliases":["kimi-k2-7-code"]}]},"usedModelIds":["claude-4.6-sonnet","default","gpt-5.4"],"theoreticalByModel":{"gpt-5.4":{"modelId":"gpt-5.4","eventModelIds":["gpt-5.4"],"totalTokens":540000,"inputTokens":240000,"outputTokens":264000,"cacheWriteTokens":24000,"cacheReadTokens":12000,"requests":12,"actualSpendCents":3840,"theoreticalCents":469.7999999999998,"deltaCents":3370.2000000000003,"deltaPercent":717.3690932311625},"auto":{"modelId":"auto","eventModelIds":["default"],"totalTokens":9812000,"inputTokens":5500000,"outputTokens":3300000,"cacheWriteTokens":110000,"cacheReadTokens":110000,"requests":11,"actualSpendCents":0,"theoreticalCents":2909.5,"deltaCents":-2909.5,"deltaPercent":null},"claude-4.6-sonnet":{"modelId":"claude-4.6-sonnet","eventModelIds":["claude-4.6-sonnet"],"totalTokens":2574000,"inputTokens":1320000,"outputTokens":880000,"cacheWriteTokens":55000,"cacheReadTokens":55000,"requests":11,"actualSpendCents":0,"theoreticalCents":1796.0250000000003,"deltaCents":-1796.0250000000003,"deltaPercent":null}}},"error":null,"cardHelp":{"includedRequests":"Legacy request quota for older personal plans. Current Cursor plans bill against separate First-party models and API pools instead.","onDemand":"Usage billed beyond your included pools when usage-based pricing is enabled. Spend is charged to your payment method; on team accounts an admin may set a hard limit.","includedPool":"Share of your included usage pools for the billing cycle. First-party models covers Cursor-built models (Auto, Composer, Cursor Grok); API covers models you choose from other providers. Total is the combined pool consumption.","poolDepletion":"Estimated date each pool reaches 100% based on average daily consumption since the billing cycle started. If usage stays at the same rate, this is when the pool would run out before reset.","poolPace":"Indicative daily budget to spread pool usage evenly until billing reset. Residual shows how much you could still use today; a negative value means you exceeded today's budget. The daily budget renews at midnight UTC; the countdown shows hours and minutes until then.","billingCycle":"Days remaining in your current billing cycle and how much of the cycle has elapsed. Pool quotas and on-demand limits reset on the date shown."},"conversationTitles":{"conv-auto":"Refactor auth module","conv-api":"Pricing dashboard QA"},"storedEventCount":1284}, locale: "it", currency: "eur" }, "*");
+        setTimeout(() => {
+          const tab = window.__SCREENSHOT_TAB__;
+          const btn = document.querySelector('.dashboard-tab[data-main-tab="' + tab + '"]');
+          if (btn && !btn.classList.contains("active")) btn.click();
+          if (tab === "pricing") {
+            document.querySelector('[data-expand-model="claude-4.6-sonnet"]')?.click();
+          }
+          document.querySelectorAll('[id^="section-body-"]').forEach((el) => el.classList.remove("hidden"));
+          const panel = document.getElementById("tab-panel-" + tab);
+          panel?.scrollIntoView({ block: "start" });
+          if (tab === "usage") {
+            document.getElementById("section-body-usage")?.scrollIntoView({ block: "start" });
+          }
+        }, 1200);
+        setTimeout(() => {
+          if (typeof window.Chart !== "undefined") {
+            window.dispatchEvent(new Event("resize"));
+          }
+        }, 900);
+      }
+    },
+  });
+</script>
+  <script nonce="screenshot-nonce" src="chart.umd.js"></script>
+  <script nonce="screenshot-nonce" src="dashboard.js"></script>
+</body>
+</html>

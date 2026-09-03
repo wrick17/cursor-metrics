@@ -1,23 +1,28 @@
-import type { UsagePayload } from "./cursor-api";
-import { getDurationLabel } from "./duration-options";
+import type { UsageEvent, UsagePayload } from "./cursor-api";
+import type { DashboardCurrency, DashboardLocale } from "./dashboard-locale";
+import { formatOnDemandSpend } from "./currency-format";
+import { getDurationLabel, t, tf } from "./i18n";
 import type { UsageDuration } from "./model-breakdown";
+import {
+  formatOnDemandBreakdownFooter,
+  getOnDemandProgressSegments,
+  getOnDemandRatio,
+  isOnDemandVisible,
+  type OnDemandUsage,
+} from "./on-demand";
+import { buildPoolTodayPaceMarkdown, buildPoolUsageMarkdown } from "./pool-usage";
+import { buildPoolUsageSeries } from "./pool-usage-series";
 
 type IncludedRequestsUsage = UsagePayload["includedRequests"];
-type OnDemandUsage = UsagePayload["onDemand"];
 
 type ProgressBarRenderer = {
   markdown: (ratio: number) => string;
   html: (ratio: number) => string;
+  segmentedHtml?: (segments: Array<{ ratio: number; opacity: number }>) => string;
   divider: () => string;
 };
 
 export const OPEN_DURATION_SETTING_COMMAND = "cursor-usage.openDurationSetting";
-
-function getOnDemandRatio(onDemand: OnDemandUsage): number | null {
-  if (onDemand.state !== "limited") return null;
-  if (onDemand.limitDollars === null || onDemand.limitDollars <= 0) return null;
-  return onDemand.spendDollars / onDemand.limitDollars;
-}
 
 type SummaryColumn = {
   label: string;
@@ -27,13 +32,6 @@ type SummaryColumn = {
 
 function formatIncludedValue(includedRequests: IncludedRequestsUsage): string {
   return `${includedRequests.used} / ${includedRequests.limit}`;
-}
-
-function formatOnDemandValue(onDemand: OnDemandUsage): string {
-  if (onDemand.state === "unlimited") {
-    return `$${onDemand.spendDollars.toFixed(2)}`;
-  }
-  return `$${onDemand.spendDollars.toFixed(2)} / $${(onDemand.limitDollars ?? 0).toFixed(2)}`;
 }
 
 function buildSummaryTable(columns: SummaryColumn[], renderProgressBar: ProgressBarRenderer): string {
@@ -58,53 +56,107 @@ function buildSummaryTable(columns: SummaryColumn[], renderProgressBar: Progress
   ].join("\n");
 }
 
+function renderOnDemandFooter(
+  onDemand: OnDemandUsage,
+  renderProgressBar: ProgressBarRenderer,
+  locale: DashboardLocale,
+): string {
+  const breakdownFooter = formatOnDemandBreakdownFooter(onDemand);
+  const segments = getOnDemandProgressSegments(onDemand);
+  if (segments && renderProgressBar.segmentedHtml) {
+    const bar = renderProgressBar.segmentedHtml(segments);
+    return breakdownFooter
+      ? `${bar}<br/><sub>${breakdownFooter}</sub>`
+      : bar;
+  }
+
+  const spendRatio = getOnDemandRatio(onDemand);
+  if (spendRatio === null) {
+    return breakdownFooter ? `<sub>${breakdownFooter}</sub>` : `<sub>${t(locale, "spendUnavailable")}</sub>`;
+  }
+  return renderProgressBar.html(spendRatio);
+}
+
 function buildSummaryColumns(
   includedRequests: IncludedRequestsUsage,
   onDemand: OnDemandUsage,
   renderProgressBar: ProgressBarRenderer,
+  locale: DashboardLocale,
+  currency: DashboardCurrency,
+  showPremiumRequests: boolean,
 ): SummaryColumn[] {
-  const reqRatio = includedRequests.limit > 0 ? includedRequests.used / includedRequests.limit : 0;
-  const includedColumn: SummaryColumn = {
-    label: "Included",
-    value: formatIncludedValue(includedRequests),
-    footer: renderProgressBar.html(reqRatio),
-  };
+  const columns: SummaryColumn[] = [];
 
-  if (onDemand.state === "disabled") {
-    return [includedColumn];
+  if (showPremiumRequests) {
+    const reqRatio = includedRequests.limit > 0 ? includedRequests.used / includedRequests.limit : 0;
+    columns.push({
+      label: t(locale, "included"),
+      value: formatIncludedValue(includedRequests),
+      footer: renderProgressBar.html(reqRatio),
+    });
+  }
+
+  if (!isOnDemandVisible(onDemand)) {
+    return columns;
   }
 
   if (onDemand.state === "unlimited") {
-    return [
-      includedColumn,
-      {
-        label: "On-demand",
-        value: formatOnDemandValue(onDemand),
-        footer: "<sub>Unlimited</sub>",
-      },
-    ];
+    const segments = getOnDemandProgressSegments(onDemand);
+    columns.push({
+      label: t(locale, "onDemand"),
+      value: formatOnDemandSpend(onDemand, currency, locale),
+      footer: segments
+        ? renderOnDemandFooter(onDemand, renderProgressBar, locale)
+        : `<sub>${t(locale, "unlimited")}</sub>`,
+    });
+    return columns;
   }
 
-  const spendRatio = getOnDemandRatio(onDemand);
-
-  return [
-    includedColumn,
-    {
-      label: "On-demand",
-      value: formatOnDemandValue(onDemand),
-      footer: spendRatio === null ? "<sub>Spend unavailable</sub>" : renderProgressBar.html(spendRatio),
-    },
-  ];
+  columns.push({
+    label: t(locale, "onDemand"),
+    value: formatOnDemandSpend(onDemand, currency, locale),
+    footer: renderOnDemandFooter(onDemand, renderProgressBar, locale),
+  });
+  return columns;
 }
+
+export type UsageOverviewData = Pick<UsagePayload, "includedRequests" | "onDemand" | "poolUsage"> & {
+  resetsAt?: string | null;
+};
 
 export function buildUsageOverviewMarkdown(
-  data: Pick<UsagePayload, "includedRequests" | "onDemand">,
+  data: UsageOverviewData,
   renderProgressBar: ProgressBarRenderer,
+  locale: DashboardLocale,
+  now = Date.now(),
+  events: UsageEvent[] = [],
+  currency: DashboardCurrency = "usd",
+  showPremiumRequests = true,
 ): string {
-  const { includedRequests, onDemand } = data;
-  return buildSummaryTable(buildSummaryColumns(includedRequests, onDemand, renderProgressBar), renderProgressBar);
+  const { includedRequests, onDemand, poolUsage, resetsAt = null } = data;
+  const summaryColumns = buildSummaryColumns(
+    includedRequests,
+    onDemand,
+    renderProgressBar,
+    locale,
+    currency,
+    showPremiumRequests,
+  );
+  let md = summaryColumns.length > 0
+    ? buildSummaryTable(summaryColumns, renderProgressBar)
+    : "";
+  if (poolUsage) {
+    md += buildPoolUsageMarkdown(poolUsage, renderProgressBar, locale);
+    if (events.length > 0) {
+      const series = buildPoolUsageSeries(events, poolUsage, resetsAt ?? null, now);
+      if (series) {
+        md += buildPoolTodayPaceMarkdown(series.todayAutoPace, series.todayApiPace, renderProgressBar, locale);
+      }
+    }
+  }
+  return md;
 }
 
-export function buildUsageByModelHeadingMarkdown(duration: UsageDuration): string {
-  return `**Usage by Model** *(${getDurationLabel(duration)})* &nbsp;[Change](command:${OPEN_DURATION_SETTING_COMMAND})\n\n`;
+export function buildUsageByModelHeadingMarkdown(duration: UsageDuration, locale: DashboardLocale): string {
+  return `**${t(locale, "usageByModel")}** *(${getDurationLabel(duration, locale)})* &nbsp;[${t(locale, "change")}](command:${OPEN_DURATION_SETTING_COMMAND})\n\n`;
 }

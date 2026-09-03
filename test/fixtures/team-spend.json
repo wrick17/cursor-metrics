@@ -1,0 +1,42 @@
+{
+  "teamMemberSpend": [
+    {
+      "userId": 379686303,
+      "name": "Matteo Atzeni",
+      "email": "m.atzeni@domoanalytics.it",
+      "role": "TEAM_ROLE_OWNER",
+      "includedSpendCents": 4949,
+      "billingTier": "TEAM_MEMBER_BILLING_TIER_TIER_1000",
+      "autoPercentUsed": 27.72857142857143,
+      "apiPercentUsed": 75.2,
+      "totalPercentUsed": 44.99090909090909
+    },
+    {
+      "userId": 379631411,
+      "name": "Vincenzo Fabiano",
+      "email": "v.fabiano@domoanalytics.it",
+      "role": "TEAM_ROLE_OWNER",
+      "includedSpendCents": 4071,
+      "billingTier": "TEAM_MEMBER_BILLING_TIER_TIER_1000",
+      "autoPercentUsed": 56.04285714285714,
+      "apiPercentUsed": 3.7249999999999996,
+      "totalPercentUsed": 37.018181818181816
+    }
+  ],
+  "subscriptionCycleStart": "1783006666000",
+  "totalMembers": 2,
+  "totalPages": 1,
+  "totalByRole": [
+    {
+      "role": "TEAM_ROLE_OWNER",
+      "count": 2
+    }
+  ],
+  "nextCycleStart": "1785685066000",
+  "limitedUserCount": 0,
+  "maxUserSpendCents": 0,
+  "subscriptionLimitedUsers": 2,
+  "hasAnySpendLimitOverrides": false,
+  "hasAnyFreeUsage": true,
+  "selfServeTieredPricingEnabled": true
+}

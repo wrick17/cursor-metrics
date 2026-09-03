@@ -8,7 +8,7 @@ describe("package configuration", () => {
 
     expect(usageDurationConfig.enum).toContain("billingCycle");
     expect(usageDurationConfig.enumItemLabels).toEqual([
-      "Last 24 hours",
+      "Today",
       "Last 7 days",
       "Last 30 days",
       "Current Billing Cycle",
@@ -16,9 +16,14 @@ describe("package configuration", () => {
   });
 
   it("keeps the display name while using a unique VS Marketplace package id", () => {
-    expect(packageJson.displayName).toBe("Cursor Usage");
-    expect(packageJson.scripts["package:vsm"]).toContain("cursor-usage-auto");
-    expect(packageJson.scripts["publish:vsm"]).toContain("cursor-usage-auto");
+    const packageScript = readFileSync("scripts/package-extension.mjs", "utf-8");
+    const prepareVsmScript = readFileSync("scripts/prepare-vsm-package.mjs", "utf-8");
+
+    expect(packageJson.displayName).toBe("Cursor Usage (Community)");
+    expect(packageJson.publisher).toBe("fabervi");
+    expect(packageScript).toContain("cursor-usage-auto");
+    expect(prepareVsmScript).toContain("cursor-usage-auto");
+    expect(packageJson.scripts["publish:vsm"]).toContain("publish-extension.mjs vsm");
   });
 
   it("exposes model table sorting settings with token-desc defaults", () => {
@@ -52,11 +57,12 @@ describe("package configuration", () => {
     const vscodeIgnore = readFileSync(".vscodeignore", "utf-8").split(/\r?\n/);
     const esbuildConfig = readFileSync("esbuild.config.mjs", "utf-8");
 
-    expect(packageJson.dependencies).toBeUndefined();
+    expect(packageJson.dependencies).toEqual({ "sql.js": "^1.14.1" });
     expect(packageJson.scripts.package).not.toContain("--no-dependencies");
     expect(packageJson.scripts["package:vsm"]).not.toContain("--no-dependencies");
     expect(vscodeIgnore).toContain("node_modules/");
+    expect(vscodeIgnore).toContain("!node_modules/sql.js/");
     expect(vscodeIgnore).toContain("node-compile-cache/");
-    expect(esbuildConfig).toContain('external: ["vscode"]');
+    expect(esbuildConfig).toContain('"sql.js"');
   });
 });

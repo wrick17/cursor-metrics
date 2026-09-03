@@ -1,3 +1,5 @@
+/// <reference types="node" />
+/// <reference path="../types/bun-test.d.ts" />
 import { describe, expect, it } from "bun:test";
 import { Database } from "bun:sqlite";
 import { existsSync, mkdtempSync } from "fs";

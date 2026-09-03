@@ -2,26 +2,46 @@ import { describe, expect, it } from "bun:test";
 import type { UsageEvent, UsagePayload } from "../src/cursor-api";
 import {
   aggregateChartSeries,
+  aggregateModelBreakdownTotals,
   buildDashboardState,
+  filterEventsForChartRange,
   filterEventsForRange,
+  paginateList,
   summarizeRange,
 } from "../src/dashboard-state";
 
 const dayMs = 86_400_000;
 const now = Date.UTC(2026, 3, 20, 12, 0, 0);
 
+const baseEvent = {
+  spendCents: 0,
+  maxMode: false,
+  inputTokens: 0,
+  outputTokens: 0,
+  cacheWriteTokens: 0,
+  cacheReadTokens: 0,
+  tokenCostCents: 0,
+  cursorTokenFee: 0,
+  isTokenBasedCall: false,
+  isHeadless: false,
+  isChargeable: true,
+  conversationId: null,
+};
+
 const sampleData: UsagePayload = {
   includedRequests: { used: 100, limit: 500 },
-  onDemand: { state: "limited", spendDollars: 12.5, limitDollars: 100 },
+  onDemand: { state: "limited", onDemandEnabled: true, spendDollars: 12.5, limitDollars: 100 },
+  poolUsage: null,
+  planInfo: null,
   resetsAt: null,
 };
 
 const sampleEvents: UsageEvent[] = [
-  { timestamp: now - 1 * dayMs, model: "gpt-5.3-codex", kind: "Included", totalTokens: 2000, requests: 2, spendCents: 0, maxMode: false },
-  { timestamp: now - 1 * dayMs, model: "gpt-5.3-codex", kind: "On-Demand", totalTokens: 3000, requests: 1.5, spendCents: 320, maxMode: true },
-  { timestamp: now - 2 * dayMs, model: "composer-2", kind: "Included", totalTokens: 500, requests: 4, spendCents: 0, maxMode: false },
-  { timestamp: now - 2 * dayMs, model: "composer-2", kind: "On-Demand", totalTokens: 100, requests: 0.6, spendCents: 50, maxMode: false },
-  { timestamp: now - 8 * dayMs, model: "gpt-5.3-codex", kind: "Included", totalTokens: 9999, requests: 9, spendCents: 0, maxMode: false },
+  { ...baseEvent, timestamp: now - 1 * dayMs, model: "gpt-5.3-codex", kind: "Included", totalTokens: 2000, requests: 2 },
+  { ...baseEvent, timestamp: now - 1 * dayMs, model: "gpt-5.3-codex", kind: "On-Demand", totalTokens: 3000, requests: 1.5, spendCents: 320, maxMode: true },
+  { ...baseEvent, timestamp: now - 2 * dayMs, model: "composer-2", kind: "Included", totalTokens: 500, requests: 4 },
+  { ...baseEvent, timestamp: now - 2 * dayMs, model: "composer-2", kind: "On-Demand", totalTokens: 100, requests: 0.6, spendCents: 50 },
+  { ...baseEvent, timestamp: now - 8 * dayMs, model: "gpt-5.3-codex", kind: "Included", totalTokens: 9999, requests: 9 },
 ];
 
 describe("buildDashboardState", () => {
@@ -31,9 +51,57 @@ describe("buildDashboardState", () => {
     expect(state.data).toBe(sampleData);
     expect(state.events.length).toBe(5);
     expect(state.isTeamMember).toBeTrue();
+    expect(state.showPremiumRequests).toBeTrue();
     expect(state.quotaAwareEventDisplay).toBeTrue();
+    expect(state.poolUsageSeries).toBeNull();
+    expect(state.poolDepletion).toBeNull();
+    expect(state.poolRecommended).toBeNull();
     expect(state.error).toBeNull();
     expect(state.resetsAt).toBeNull();
+    expect(state.warnings).toEqual([]);
+    expect(state.eventsComplete).toBeTrue();
+    expect(state.cardHelp.includedRequests).toContain("Legacy");
+  });
+
+  it("propagates warnings and eventsComplete flags", () => {
+    const state = buildDashboardState(
+      sampleData,
+      sampleEvents,
+      [],
+      false,
+      null,
+      now,
+      true,
+      {},
+      0,
+      sampleEvents,
+      ["Events outdated"],
+      false,
+    );
+    expect(state.warnings).toEqual(["Events outdated"]);
+    expect(state.eventsComplete).toBeFalse();
+  });
+
+  it("hides legacy request counter for team accounts with pool usage", () => {
+    const teamData: UsagePayload = {
+      ...sampleData,
+      planInfo: {
+        accountType: "team",
+        planKind: "enterprise",
+        seatType: null,
+        tier: "Enterprise",
+        priceLabel: null,
+        displayName: "Enterprise",
+      },
+      poolUsage: { autoPercentUsed: 50, apiPercentUsed: 100, totalPercentUsed: 75 },
+    };
+    const state = buildDashboardState(teamData, [], [], true, null, now);
+    expect(state.showPremiumRequests).toBeFalse();
+  });
+
+  it("shows legacy request counter for personal accounts without pool usage", () => {
+    const state = buildDashboardState(sampleData, [], [], false, null, now);
+    expect(state.showPremiumRequests).toBeTrue();
   });
 
   it("propagates resetsAt from data", () => {
@@ -47,6 +115,65 @@ describe("buildDashboardState", () => {
     const state = buildDashboardState(null, [], [], false, "boom", now);
     expect(state.data).toBeNull();
     expect(state.error).toBe("boom");
+  });
+
+  it("keeps pool daily budget independent of the display event range", () => {
+    const poolNow = Date.UTC(2026, 6, 14, 12, 0, 0);
+    const resetsAt = "2026-08-02T15:37:46.000Z";
+    const early = Date.UTC(2026, 6, 3, 14, 0, 0);
+    const recent = Date.UTC(2026, 6, 14, 10, 0, 0);
+    const poolData: UsagePayload = {
+      ...sampleData,
+      resetsAt,
+      poolUsage: { autoPercentUsed: 40, apiPercentUsed: 20, totalPercentUsed: 30 },
+      planInfo: {
+        accountType: "individual",
+        planKind: "ultra",
+        seatType: null,
+        tier: "Ultra",
+        priceLabel: null,
+        displayName: "Ultra",
+      },
+    };
+    const cycleEvents: UsageEvent[] = [
+      {
+        ...baseEvent,
+        timestamp: early,
+        model: "default",
+        kind: "Included",
+        totalTokens: 1000,
+        requests: 1,
+        spendCents: 200,
+      },
+      {
+        ...baseEvent,
+        timestamp: recent,
+        model: "default",
+        kind: "Included",
+        totalTokens: 1000,
+        requests: 1,
+        spendCents: 50,
+      },
+    ];
+    const recentOnly = cycleEvents.filter((e) => e.timestamp >= poolNow - 2 * dayMs);
+    const withFilteredOnly = buildDashboardState(poolData, recentOnly, [], false, null, poolNow);
+    const withFullPoolHistory = buildDashboardState(
+      poolData,
+      recentOnly,
+      [],
+      false,
+      null,
+      poolNow,
+      true,
+      {},
+      0,
+      cycleEvents,
+    );
+
+    expect(recentOnly).toHaveLength(1);
+    expect(withFilteredOnly.poolUsageSeries?.todayAutoPace?.used).toBeCloseTo(40, 5);
+    expect(withFullPoolHistory.poolUsageSeries?.todayAutoPace?.used).toBeCloseTo(8, 5);
+    expect(withFullPoolHistory.events).toEqual(recentOnly);
   });
 });
 
@@ -116,8 +243,8 @@ describe("aggregateChartSeries", () => {
 
   it("does not count chargedCents as spend while requests are included by default", () => {
     const events: UsageEvent[] = [
-      { timestamp: now - dayMs, model: "gpt-5.3-codex", kind: "Included", totalTokens: 2000, requests: 2, spendCents: 450, maxMode: false },
-      { timestamp: now - dayMs, model: "gpt-5.3-codex", kind: "On-Demand", totalTokens: 3000, requests: 1.5, spendCents: 320, maxMode: true },
+      { ...baseEvent, timestamp: now - dayMs, model: "gpt-5.3-codex", kind: "Included", totalTokens: 2000, requests: 2, spendCents: 450 },
+      { ...baseEvent, timestamp: now - dayMs, model: "gpt-5.3-codex", kind: "On-Demand", totalTokens: 3000, requests: 1.5, spendCents: 320, maxMode: true },
     ];
 
     const series = aggregateChartSeries(events, [], "7d", null, "spend", "all", now);
@@ -127,8 +254,8 @@ describe("aggregateChartSeries", () => {
 
   it("keeps included chargedCents in spend when quota-aware display is disabled", () => {
     const events: UsageEvent[] = [
-      { timestamp: now - dayMs, model: "gpt-5.3-codex", kind: "Included", totalTokens: 2000, requests: 2, spendCents: 450, maxMode: false },
-      { timestamp: now - dayMs, model: "gpt-5.3-codex", kind: "On-Demand", totalTokens: 3000, requests: 1.5, spendCents: 320, maxMode: true },
+      { ...baseEvent, timestamp: now - dayMs, model: "gpt-5.3-codex", kind: "Included", totalTokens: 2000, requests: 2, spendCents: 450 },
+      { ...baseEvent, timestamp: now - dayMs, model: "gpt-5.3-codex", kind: "On-Demand", totalTokens: 3000, requests: 1.5, spendCents: 320, maxMode: true },
     ];
 
     const series = aggregateChartSeries(events, [], "7d", null, "spend", "all", now, false);
@@ -154,6 +281,87 @@ describe("aggregateChartSeries", () => {
     for (let i = 1; i < totals.length; i++) {
       expect(totals[i - 1]).toBeGreaterThanOrEqual(totals[i]!);
     }
+  });
+
+  it("varies day bucket count by selected range", () => {
+    const oneDay = aggregateChartSeries(sampleEvents, [], "1d", null, "tokens", "all", now);
+    const sevenDay = aggregateChartSeries(sampleEvents, [], "7d", null, "tokens", "all", now);
+    const thirtyDay = aggregateChartSeries(sampleEvents, [], "30d", null, "tokens", "all", now);
+    expect(oneDay.labels.length).toBe(1);
+    expect(sevenDay.labels.length).toBe(8);
+    expect(thirtyDay.labels.length).toBe(31);
+    expect(oneDay.labels.length).toBeLessThan(sevenDay.labels.length);
+    expect(sevenDay.labels.length).toBeLessThan(thirtyDay.labels.length);
+  });
+
+  it("includes only same-day events for the 1d (today) range", () => {
+    const empty = aggregateChartSeries(sampleEvents, [], "1d", null, "tokens", "all", now);
+    expect(empty.datasets.length).toBe(0);
+
+    const todayEvents: UsageEvent[] = [
+      { ...baseEvent, timestamp: now - 2 * 3_600_000, model: "gpt-5.3-codex", kind: "Included", totalTokens: 1200, requests: 1 },
+    ];
+    const series = aggregateChartSeries(todayEvents, [], "1d", null, "tokens", "all", now);
+    expect(sumOf(series.datasets[0]!.data)).toBe(1200);
+  });
+
+  it("filterEventsForChartRange matches chart series token totals", () => {
+    const filtered = filterEventsForChartRange(sampleEvents, "7d", null, "all", now);
+    const series = aggregateChartSeries(sampleEvents, [], "7d", null, "tokens", "all", now);
+    const filteredTokens = filtered.reduce((sum, e) => sum + (e.totalTokens ?? 0), 0);
+    const chartTokens = series.datasets.reduce(
+      (sum, d) => sum + d.data.reduce((a, b) => a + b, 0),
+      0,
+    );
+    expect(filteredTokens).toBe(chartTokens);
+  });
+
+  it("aggregateModelBreakdownTotals matches chart per-model token sums", () => {
+    const breakdown = aggregateModelBreakdownTotals(sampleEvents, [], "7d", null, "all", now);
+    const series = aggregateChartSeries(sampleEvents, [], "7d", null, "tokens", "all", now);
+    const sumBreakdown = breakdown.reduce((sum, row) => sum + row.totalTokens, 0);
+    const sumChart = series.datasets.reduce(
+      (sum, d) => sum + d.data.reduce((a, b) => a + b, 0),
+      0,
+    );
+    expect(sumBreakdown).toBe(sumChart);
+    const codex = breakdown.find((r) => r.model === "gpt-5.3-codex");
+    expect(codex?.totalTokens).toBe(5000);
+  });
+
+  it("extends billing cycle axis through day before reset", () => {
+    const resetAtIso = new Date(now + 5 * dayMs).toISOString();
+    const series = aggregateChartSeries(sampleEvents, [], "billingCycle", resetAtIso, "tokens", "all", now);
+    expect(series.labels.length).toBeGreaterThan(30);
+    expect(series.dayMs?.length).toBe(series.labels.length);
+  });
+});
+
+describe("paginateList", () => {
+  const items = Array.from({ length: 105 }, (_, i) => i + 1);
+
+  it("returns the requested page slice", () => {
+    const page = paginateList(items, 2, 50);
+    expect(page.items).toEqual(Array.from({ length: 50 }, (_, i) => i + 51));
+    expect(page.totalItems).toBe(105);
+    expect(page.totalPages).toBe(3);
+    expect(page.page).toBe(2);
+    expect(page.startIndex).toBe(50);
+    expect(page.endIndex).toBe(100);
+  });
+
+  it("clamps page when out of range", () => {
+    const page = paginateList(items, 99, 50);
+    expect(page.page).toBe(3);
+    expect(page.items.length).toBe(5);
+  });
+
+  it("handles empty lists", () => {
+    const page = paginateList([], 5, 50);
+    expect(page.items).toEqual([]);
+    expect(page.totalItems).toBe(0);
+    expect(page.totalPages).toBe(1);
+    expect(page.page).toBe(1);
   });
 });
 

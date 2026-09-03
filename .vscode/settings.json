@@ -1,0 +1,6 @@
+{
+  "npm.autoDetect": "off",
+  "npm.packageManager": "bun",
+  "npm.exclude": "**/node_modules/**",
+  "task.autoDetect": "off"
+}

@@ -1,0 +1,20 @@
+{
+  "membershipType": "enterprise",
+  "paymentId": "cus_UoTGhCU7Rm4wgO",
+  "verifiedStudent": false,
+  "studentDiscountApplied": false,
+  "trialEligible": true,
+  "trialLengthDays": 7,
+  "isOnStudentPlan": false,
+  "isOnBillableAuto": true,
+  "customerBalance": 0,
+  "trialWasCancelled": false,
+  "isTeamMember": true,
+  "teamId": 27703205,
+  "teamMembershipType": "SELF_SERVE",
+  "individualMembershipType": "free",
+  "lastPaymentFailed": false,
+  "pendingCancellationDate": null,
+  "paymentRecoveryAction": null,
+  "isYearlyPlan": false
+}

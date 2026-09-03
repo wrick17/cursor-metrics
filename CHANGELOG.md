@@ -2,13 +2,120 @@
 
 All notable changes to this project are documented in this file.
 
+## [0.8.1] - 2026-08-13
+
+### Added
+- **Cursor Grok 4.6** (and Fast) in the first-party pricing catalog and pool classification.
+
+### Changed
+- Composer 2.5 Fast and Grok 4.5 Fast use official **customRates** ($3/$15 and $4/$12 per 1M) instead of same-rate-more-tokens.
+- Pricing catalog sync parses the **Cursor Models** docs table (in addition to Other Models).
+- GPT-5.6 Luna / Terra rates and Gemini 3.5 Flash `hidden` flag aligned with [cursor.com/docs/models-and-pricing](https://cursor.com/docs/models-and-pricing).
+
+## [0.8.0] - 2026-07-20
+
+### Changed
+- Pool label **Auto** → **First-party models** (IT: *Modelli first-party*) across status bar, tooltip, dashboard, and help text — aligned with Cursor billing wording.
+- Grok catalog display name → **Cursor Grok 4.5**.
+- Dashboard usage chart always shows daily **tokens**; the usage filter (All / Included / On-Demand) moved to **Usage by model** and applies to chart, breakdown, and pricing usage columns.
+- Pricing tab layout: full-width dashboard body, model names and badges kept on one line.
+
+### Fixed
+- Hide on-demand credit in status bar, tooltip, and dashboard when on-demand usage is disabled (no more `0,00 €/0,00 €` with state `limited`).
+- First-party pool series and breakdown: classify Auto / Composer / Cursor Grok via pricing catalog `pool: "firstParty"` instead of only `model === "default"`.
+- Billing-cycle cutoff: month overflow and local-timezone edge cases at end of month (`getBillingCycleCutoff` / `shiftUtcMonth`).
+- Recommended pool usage target now uses a wall-clock denominator so it reaches 100% at reset.
+- Dashboard daily budget bar normalizes `used/allowance` correctly.
+- Pool usage series: uniform fallback shape when live pool % is > 0 but spend events are empty.
+- Screenshot preview / tooltip HTML for html-validate (void elements, no inline styles, overlay focusability).
+- **Request counts** for token-metered events: charts and tables count one call per event instead of surfacing API `requestsCosts` or polluted archive values.
+- **Theoretical cost** for effort/thinking model slugs (e.g. `-fast`, `-thinking-high`) via expanded pricing alias resolution.
+- Event archive deduplication after request normalization (fingerprint no longer depends on derived `requests` field; one-time store migration).
+
+## [0.7.1] - 2026-07-14
+
+### Added
+- **Daily budget reset countdown** in the dashboard pool card and status-bar tooltip — shows time until the daily allowance renews at midnight UTC (with local reset time).
+- **Pin models** in the Pricing tab: star/unstar models to keep them at the top of the catalog; pin order and selection persist across dashboard sessions via extension global state.
+- **Drag-and-drop reorder** for pinned pricing models (⋮⋮ handle on pinned rows).
+- Screenshot generation scripts (`scripts/build-screenshot-previews.mjs`, `scripts/capture-screenshots.mjs`) and `bun run screenshots` for README/marketplace assets.
+
+### Changed
+- README screenshots updated to reflect the current dashboard (Usage, Pools, Pricing, Activity tabs) and status-bar tooltip.
+- Italian pricing catalog labels and variant notes via `pricing-catalog-i18n.js`.
+
+### Fixed
+- Spacing above the expanded “Modes & pricing impact” panel in the Pricing tab.
+
+## [0.7.0] - 2026-07-13
+
+### Added
+- Dashboard **Pricing** tab with official per-component model rates sourced from `model-pricing.json`, including First-party vs API pool badges and provider filters.
+- Model pricing catalog with variant modes (thinking, fast, max context), alias resolution, and per-model token cost calculator.
+- Actual vs theoretical spend comparison and delta per model for the active dashboard range.
+- Deep link from event detail and model breakdown into the matching pricing catalog row.
+- Sticky dashboard main tabs: **Usage**, **Pools**, **Pricing**, and **Activity** (events / conversations).
+- `src/model-pricing.ts` for catalog loading, variant-aware rate resolution, component cost estimation, and usage aggregation.
+- `src/dashboard/dashboard-html.ts` to generate dashboard markup from the extension host.
+- Cross-platform packaging and publish scripts (`scripts/package-extension.mjs`, `scripts/publish-extension.mjs`) using Bun instead of shell-only `vsce`/`ovsx` invocations.
+- Split dashboard i18n into `en.js` / `it.js` locale bundles plus `pricing-catalog-i18n.js` for Italian variant labels and notes.
+- Tests for model pricing catalog validation, alias/variant resolution, and theoretical cost estimation.
+
+### Changed
+- Decomposed monolithic `extension.ts`, `on-demand.ts`, `cursor-usage-fetch.ts`, and dashboard modules into smaller host and webview files for maintainability.
+- Split dashboard CSS into layout, summary, events, and pricing stylesheets; refactored summary and tables into focused JS modules.
+- Expanded README with Bun prerequisites, local VSIX build steps, and Open VSX / Visual Studio Marketplace publish workflow (including Windows PowerShell examples).
+- Simplified `package.json` release scripts to delegate build, package, and publish to the new Bun scripts.
+
+### Fixed
+- Complete Italian localization for the pricing section UI, variant descriptions, and token component labels.
+- Vertical spacing of the expanded “Modes & pricing impact” panel under each model row.
+
+## [0.6.0] - 2026-07-08
+
+### Changed
+- Community fork rebranded as **Cursor Usage (Community)** for publication under publisher `fabervi`.
+- Status bar, tooltip, and dashboard no longer show the legacy `used/limit` request counter when Cursor exposes pool usage (First-party Auto + API pools), matching current Cursor billing for Team, Enterprise, and modern personal plans.
+- `minimalMode` now treats total pool exhaustion as the trigger on pool-based plans.
+- Help text updated to describe the two-pool billing model instead of deprecated premium-request quotas.
+- On-demand usage now uses `GetCurrentPeriodUsage` for accurate pooled/individual limits (integrated from cozminv fork).
+- Stacked chart bars no longer use rounded corners on intermediate segments.
+
+### Added
+- `shouldShowPremiumRequestsQuota()` and `isIncludedQuotaExhausted()` helpers in `src/usage-display.ts`.
+- Tests for pool-based vs legacy personal display rules.
+- On-demand module (`src/on-demand.ts`) with team pool breakdown, spend-limit API parsing, and segmented progress bars.
+- Dashboard UI preferences persistence (`range`, `usageFilter`, `metric`) across sessions.
+- Totals row in Usage by Model table (dashboard and tooltip).
+
+## [0.5.19] - 2026-07-08
+
+### Changed
+- Status bar, tooltip, and dashboard no longer show the legacy `used/limit` request counter when Cursor exposes pool usage (First-party Auto + API pools), matching current Cursor billing for Team, Enterprise, and modern personal plans.
+- `minimalMode` now treats total pool exhaustion as the trigger on pool-based plans.
+- Help text updated to describe the two-pool billing model instead of deprecated premium-request quotas.
+
+### Added
+- `shouldShowPremiumRequestsQuota()` and `isIncludedQuotaExhausted()` helpers in `src/usage-display.ts`.
+- Tests for pool-based vs legacy personal display rules.
+
 ## [0.5.18] - 2026-05-07
 
 ### Added
-- Added `cursorUsage.quotaAwareEventDisplay` to control whether dashboard events show included usage as requests and on-demand usage as spend.
+- Local SQLite archive for usage events (120-day lookback) with incremental sync from the Cursor API.
+- Dashboard **Conversations** tab with optional title preview and message detail loaded from the Cursor state database.
+- Italian/English language selector and USD/EUR currency display across dashboard, status bar, and tooltip.
+- `cursorUsage.quotaAwareEventDisplay` to control whether dashboard events show included usage as requests and on-demand usage as spend.
+
+### Changed
+- Refactored Cursor API layer and dashboard frontend into smaller modules.
+- Conversation aggregation and spend totals now share one implementation between host and webview.
+- Dashboard webview receives usage events filtered to the active range/filter to reduce payload size.
 
 ### Fixed
 - Dashboard events, chart spend, model breakdown spend, and CSV export now treat included premium-request usage as request quota usage by default instead of on-demand spend.
+- Conversation message loading and DB reads surface errors instead of hanging on failure.
+- Event deduplication fingerprint now covers full billing metadata to avoid silently dropping distinct events.
 
 ## [0.5.15] - 2026-05-07
 

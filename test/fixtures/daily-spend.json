@@ -1,0 +1,22 @@
+{
+  "dailySpend": [
+    {
+      "day": 1783000800000,
+      "category": "composer-2.5",
+      "spendCents": 1200,
+      "totalTokens": 970800000
+    },
+    {
+      "day": 1783000800000,
+      "category": "claude-opus-5-thinking-max",
+      "spendCents": 3400,
+      "totalTokens": 151400000
+    },
+    {
+      "day": 1783000800000,
+      "category": "default",
+      "spendCents": 800,
+      "totalTokens": 176600000
+    }
+  ]
+}

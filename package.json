@@ -1,40 +1,47 @@
 {
   "name": "cursor-usage",
-  "version": "0.5.18",
+  "displayName": "Cursor Usage (Community)",
+  "description": "Shows your Cursor IDE usage (included requests and on-demand spend) in the status bar",
+  "version": "0.8.1",
+  "publisher": "fabervi",
+  "license": "MIT",
+  "private": true,
   "repository": {
     "type": "git",
-    "url": "https://github.com/wrick17/cursor-metrics"
+    "url": "https://github.com/FaberVi/cursor-usage"
   },
-  "main": "./dist/extension.js",
-  "devDependencies": {
-    "@types/node": "^25.3.0",
-    "@types/vscode": "^1.85.0",
-    "esbuild": "^0.25.0",
-    "typescript": "^5.7.0"
+  "engines": {
+    "vscode": "^1.85.0"
   },
-  "activationEvents": [
-    "onStartupFinished"
-  ],
   "categories": [
     "Other"
   ],
+  "activationEvents": [
+    "onStartupFinished"
+  ],
+  "main": "./dist/extension.js",
+  "icon": "icon.png",
   "contributes": {
     "commands": [
       {
         "command": "cursor-usage.showDetails",
-        "title": "Cursor Usage: Show Details"
+        "title": "Cursor Usage (Community): Show Details"
       },
       {
         "command": "cursor-usage.refresh",
-        "title": "Cursor Usage: Refresh"
+        "title": "Cursor Usage (Community): Refresh"
+      },
+      {
+        "command": "cursor-usage.refreshPricingCatalog",
+        "title": "Cursor Usage (Community): Refresh Pricing Catalog"
       },
       {
         "command": "cursor-usage.openDashboard",
-        "title": "Cursor Usage: Open Dashboard"
+        "title": "Cursor Usage (Community): Open Dashboard"
       }
     ],
     "configuration": {
-      "title": "Cursor Usage",
+      "title": "Cursor Usage (Community)",
       "properties": {
         "cursorUsage.pollInterval": {
           "type": "number",
@@ -70,13 +77,13 @@
             "billingCycle"
           ],
           "enumItemLabels": [
-            "Last 24 hours",
+            "Today",
             "Last 7 days",
             "Last 30 days",
             "Current Billing Cycle"
           ],
           "enumDescriptions": [
-            "Last 24 hours",
+            "Current day (UTC)",
             "Last 7 days",
             "Last 30 days",
             "Current billing cycle (falls back to Last 30 Days when reset metadata is unavailable)"
@@ -126,22 +133,26 @@
       }
     }
   },
-  "description": "Shows your Cursor IDE usage (included requests and on-demand spend) in the status bar",
-  "displayName": "Cursor Usage",
-  "engines": {
-    "vscode": "^1.85.0"
-  },
-  "icon": "icon.png",
-  "license": "MIT",
-  "publisher": "wrick17",
   "scripts": {
-    "build": "node esbuild.config.mjs --production",
-    "watch": "node esbuild.config.mjs --watch",
-    "package": "bun run build && mkdir -p build && VERSION=$(node -p \"require('./package.json').version\") && bunx @vscode/vsce package --out \"build/cursor-usage-${VERSION}.vsix\"",
-    "package:vsm": "bun run build && node scripts/prepare-vsm-package.mjs && VERSION=$(node -p \"require('./package.json').version\") && cd \"build/vsm-package\" && bunx @vscode/vsce package --out \"../cursor-usage-auto-${VERSION}.vsix\"",
-    "publish:ovsx": "VERSION=$(node -p \"require('./package.json').version\") && bunx ovsx publish \"build/cursor-usage-${VERSION}.vsix\" -p \"$OPEN_VSX_TOKEN\"",
-    "publish:vsm": "bun run package:vsm && VERSION=$(node -p \"require('./package.json').version\") && bunx @vscode/vsce publish --packagePath \"build/cursor-usage-auto-${VERSION}.vsix\" -p \"$VSCE_PAT\"",
+    "build": "bun scripts/download-chart.mjs && bun esbuild.config.mjs --production",
+    "watch": "bun esbuild.config.mjs --watch",
+    "package": "bun scripts/package-extension.mjs",
+    "package:vsm": "bun scripts/package-extension.mjs vsm",
+    "publish:ovsx": "bun scripts/publish-extension.mjs ovsx",
+    "publish:vsm": "bun run package:vsm && bun scripts/publish-extension.mjs vsm",
     "publish:all": "bun run package && bun run publish:ovsx && bun run publish:vsm",
-    "release": "bun run publish:all"
+    "release": "bun run publish:all",
+    "screenshots": "bun scripts/capture-screenshots.mjs"
+  },
+  "dependencies": {
+    "sql.js": "^1.14.1"
+  },
+  "devDependencies": {
+    "@types/node": "^25.3.0",
+    "@types/vscode": "^1.85.0",
+    "esbuild": "^0.25.0",
+    "playwright": "^1.52.0",
+    "puppeteer": "^25.3.0",
+    "typescript": "^5.7.0"
   }
 }

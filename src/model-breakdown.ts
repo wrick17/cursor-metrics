@@ -1,4 +1,6 @@
 import type { DailySpendRow, UsageEvent } from "./cursor-api";
+import { getBillingCycleCutoff, parseTimestamp } from "./cursor-api-utils";
+import { eventRequestCount, eventTokenCount } from "./cursor-usage-parsing";
 
 export type UsageDuration = "1d" | "7d" | "30d" | "billingCycle";
 
@@ -48,12 +50,16 @@ function sortModelAggregates(
 }
 
 function getBillingCycleStart(resetAtIso: string, now = Date.now()): number {
-  const resetAt = new Date(resetAtIso);
-  if (Number.isNaN(resetAt.getTime())) {
-    return now - 31 * 86_400_000;
-  }
-  resetAt.setMonth(resetAt.getMonth() - 1);
-  return resetAt.getTime();
+  return getBillingCycleCutoff(resetAtIso, now);
+}
+
+function startOfUtcDay(ts: number): number {
+  const d = new Date(ts);
+  return Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate());
+}
+
+function eventTimestampMs(event: UsageEvent): number {
+  return parseTimestamp(event.timestamp);
 }
 
 export function getDurationCutoff(
@@ -65,7 +71,10 @@ export function getDurationCutoff(
     if (!resetAtIso) return now - 31 * 86_400_000;
     return getBillingCycleStart(resetAtIso, now);
   }
-  const daysMap: Record<Exclude<UsageDuration, "billingCycle">, number> = { "1d": 1, "7d": 7, "30d": 30 };
+  if (duration === "1d") {
+    return startOfUtcDay(now);
+  }
+  const daysMap: Record<Exclude<UsageDuration, "billingCycle" | "1d">, number> = { "7d": 7, "30d": 30 };
   return now - daysMap[duration] * 86_400_000;
 }
 
@@ -86,6 +95,65 @@ export function aggregateSpendByCategory(
   return totals;
 }
 
+export function aggregateTokensByCategory(
+  rows: DailySpendRow[],
+  duration: UsageDuration,
+  resetAtIso: string | null,
+  now = Date.now(),
+): Map<string, number> {
+  const cutoff = getDurationCutoff(duration, resetAtIso, now);
+  const totals = new Map<string, number>();
+
+  for (const row of rows) {
+    if (row.day < cutoff) continue;
+    totals.set(row.category, (totals.get(row.category) ?? 0) + row.totalTokens);
+  }
+
+  return totals;
+}
+
+export type UsageFilterKind = "all" | "included" | "ondemand";
+
+function matchesUsageFilter(event: UsageEvent, filter: UsageFilterKind): boolean {
+  if (filter === "all") return true;
+  if (filter === "included") return event.kind === "Included";
+  return event.kind === "On-Demand";
+}
+
+export function shouldPreferDailySpendTokens(
+  spendRows: DailySpendRow[],
+  usageFilter: UsageFilterKind = "all",
+): boolean {
+  return usageFilter === "all" && spendRows.length > 0;
+}
+
+export function buildModelTokenTotals(
+  events: UsageEvent[],
+  spendRows: DailySpendRow[],
+  duration: UsageDuration,
+  resetAtIso: string | null,
+  now: number,
+  usageFilter: UsageFilterKind,
+): Map<string, number> {
+  const preferDaily = shouldPreferDailySpendTokens(spendRows, usageFilter);
+  if (preferDaily) {
+    return aggregateTokensByCategory(spendRows, duration, resetAtIso, now);
+  }
+
+  const cutoff = getDurationCutoff(duration, resetAtIso, now);
+  const totals = new Map<string, number>();
+  for (const event of events) {
+    if (eventTimestampMs(event) < cutoff) continue;
+    if (!matchesUsageFilter(event, usageFilter)) continue;
+    totals.set(event.model, (totals.get(event.model) ?? 0) + eventTokenCount(event));
+  }
+  return totals;
+}
+
+export type AggregateByModelOptions = {
+  preferDailySpendTokens?: boolean;
+};
+
 export function aggregateByModel(
   events: UsageEvent[],
   spendRows: DailySpendRow[],
@@ -94,31 +162,51 @@ export function aggregateByModel(
   now = Date.now(),
   sortBy: ModelBreakdownSortBy = "tokens",
   sortOrder: SortOrder = "desc",
+  options: AggregateByModelOptions = {},
 ): ModelAggregate[] {
   const cutoff = getDurationCutoff(duration, resetAtIso, now);
   const spendByCategory = aggregateSpendByCategory(spendRows, duration, resetAtIso, now);
+  const tokensByCategory = aggregateTokensByCategory(spendRows, duration, resetAtIso, now);
+  const preferDaily = options.preferDailySpendTokens ?? shouldPreferDailySpendTokens(spendRows);
   const modelMap = new Map<string, { totalTokens: number; requests: number }>();
 
   for (const event of events) {
-    if (event.timestamp < cutoff) continue;
+    if (eventTimestampMs(event) < cutoff) continue;
     const entry = modelMap.get(event.model) ?? { totalTokens: 0, requests: 0 };
-    entry.totalTokens += event.totalTokens;
-    entry.requests += event.requests;
+    entry.totalTokens += eventTokenCount(event);
+    entry.requests += eventRequestCount(event);
     modelMap.set(event.model, entry);
   }
 
-  const rows = [...modelMap.entries()].map(([model, totals]) => ({
-    model,
-    totalTokens: totals.totalTokens,
-    requests: totals.requests,
-    spendCents: spendByCategory.get(model) ?? 0,
-  }));
+  const models = new Set<string>([
+    ...modelMap.keys(),
+    ...(preferDaily ? tokensByCategory.keys() : []),
+  ]);
+
+  const rows = [...models].map((model) => {
+    const eventTotals = modelMap.get(model);
+    const totalTokens = preferDaily
+      ? (tokensByCategory.get(model) ?? eventTotals?.totalTokens ?? 0)
+      : (eventTotals?.totalTokens ?? 0);
+    return {
+      model,
+      totalTokens,
+      requests: eventTotals?.requests ?? 0,
+      spendCents: spendByCategory.get(model) ?? 0,
+    };
+  });
   return sortModelAggregates(rows, sortBy, sortOrder);
 }
 
-export function formatDollarsFromCents(cents: number): string {
-  const dollars = cents / 100;
-  return `$${dollars.toFixed(2)}`;
+import type { DashboardCurrency, DashboardLocale } from "./dashboard-locale";
+import { formatMoneyFromCents } from "./currency-format";
+
+export function formatDollarsFromCents(
+  cents: number,
+  currency: DashboardCurrency = "usd",
+  locale: DashboardLocale = "en",
+): string {
+  return formatMoneyFromCents(cents, currency, locale);
 }
 
 export function filterZeroTokenModels(rows: ModelAggregate[], excludeZeroTokenModels: boolean): ModelAggregate[] {

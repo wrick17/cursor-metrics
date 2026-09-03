@@ -1,0 +1,71 @@
+{
+  "totalUsageEventsCount": 237,
+  "usageEventsDisplay": [
+    {
+      "timestamp": "1783279186197",
+      "model": "default",
+      "kind": "USAGE_EVENT_KIND_INCLUDED_IN_BUSINESS",
+      "requestsCosts": 8.199999809265137,
+      "usageBasedCosts": "-",
+      "isTokenBasedCall": true,
+      "tokenUsage": {
+        "inputTokens": 4089,
+        "outputTokens": 1442,
+        "cacheReadTokens": 587296,
+        "totalCents": 32.75450134277344
+      },
+      "owningUser": "379631411",
+      "owningTeam": "27703205",
+      "cursorTokenFee": 0,
+      "isChargeable": true,
+      "serviceAccountId": "null",
+      "isHeadless": false,
+      "chargedCents": 16.058725357055664,
+      "conversationId": "b1992beb-b50f-4b7d-aaff-af4e0ef47e36"
+    },
+    {
+      "timestamp": "1783279111496",
+      "model": "default",
+      "kind": "USAGE_EVENT_KIND_INCLUDED_IN_BUSINESS",
+      "requestsCosts": 12.600000381469727,
+      "usageBasedCosts": "-",
+      "isTokenBasedCall": true,
+      "tokenUsage": {
+        "inputTokens": 4069,
+        "outputTokens": 2588,
+        "cacheReadTokens": 903040,
+        "totalCents": 50.25469970703125
+      },
+      "owningUser": "379631411",
+      "owningTeam": "27703205",
+      "cursorTokenFee": 0,
+      "isChargeable": true,
+      "serviceAccountId": "null",
+      "isHeadless": false,
+      "chargedCents": 24.63742446899414,
+      "conversationId": "b1992beb-b50f-4b7d-aaff-af4e0ef47e36"
+    },
+    {
+      "timestamp": "1783279004583",
+      "model": "default",
+      "kind": "USAGE_EVENT_KIND_INCLUDED_IN_BUSINESS",
+      "requestsCosts": 23.200000762939453,
+      "usageBasedCosts": "-",
+      "isTokenBasedCall": true,
+      "tokenUsage": {
+        "inputTokens": 13563,
+        "outputTokens": 8777,
+        "cacheReadTokens": 1513408,
+        "totalCents": 92.90480041503906
+      },
+      "owningUser": "379631411",
+      "owningTeam": "27703205",
+      "cursorTokenFee": 0,
+      "isChargeable": true,
+      "serviceAccountId": "null",
+      "isHeadless": false,
+      "chargedCents": 44.796775817871094,
+      "conversationId": "b1992beb-b50f-4b7d-aaff-af4e0ef47e36"
+    }
+  ]
+}
