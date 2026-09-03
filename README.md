@@ -95,8 +95,8 @@ Daily pool percentages are derived from included usage events (first-party catal
 ### Clone and install
 
 ```bash
-git clone https://github.com/FaberVi/cursor-metrics.git
-cd cursor-metrics
+git clone https://github.com/FaberVi/cursor-usage.git
+cd cursor-usage
 bun install
 ```
 
@@ -229,7 +229,7 @@ bunx ovsx publish build/cursor-usage-<version>.vsix -p "$OPEN_VSX_TOKEN"
 ## Authors & maintainers
 
 - **Created by** [wrick17](https://github.com/wrick17) — original extension and [cursor-metrics](https://github.com/wrick17/cursor-metrics) repository.
-- **Maintained by** [Vincenzo Fabiano (FaberVi)](https://github.com/FaberVi) — community fork, pool analytics, dashboard i18n, pacing projections, and ongoing improvements. Published on the VS Marketplace as [fabervi](https://marketplace.visualstudio.com/publishers/fabervi).
+- **Maintained by** [Vincenzo Fabiano (FaberVi)](https://github.com/FaberVi) — community fork ([cursor-usage](https://github.com/FaberVi/cursor-usage)), pool analytics, dashboard i18n, pacing projections, and ongoing improvements. Published on the VS Marketplace as [fabervi](https://marketplace.visualstudio.com/publishers/fabervi).
 
 ## License
 
