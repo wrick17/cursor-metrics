@@ -47,15 +47,23 @@ export function getSortedEvents() {
   });
 }
 
+function kindClassName(kind) {
+  if (kind === "Included") return "kind-Included";
+  if (kind === "On-Demand") return "kind-OnDemand";
+  if (kind === "Errored") return "kind-Errored";
+  if (kind === "Aborted") return "kind-Aborted";
+  return "kind-Unknown";
+}
+
 function renderEventRow(e, eventIdx) {
   const maxBadge = e.maxMode ? ' <span class="max-badge">MAX</span>' : "";
   const color = colorForModel(e.model);
   const rowStyle = 'background:' + tintColor(color, 0.10) + ';box-shadow:inset 3px 0 0 ' + color + ';';
   const eventKey = e.eventKey ?? "";
   const selected = refs.selectedEventKey === eventKey ? " event-row-selected" : "";
-  return '<tr class="event-row-clickable' + selected + '" data-event-key="' + escapeHtml(eventKey) + '" data-event-idx="' + eventIdx + '" style="' + rowStyle + '" title="Click for token breakdown">' +
+  return '<tr class="event-row-clickable' + selected + '" data-event-key="' + escapeHtml(eventKey) + '" data-event-idx="' + eventIdx + '" style="' + rowStyle + '" title="' + escapeHtml(t("convClickEvent")) + '">' +
     "<td>" + formatDateTime(e.timestamp) + "</td>" +
-    '<td><span class="kind-badge kind-' + e.kind.replace(/[^A-Za-z]/g, "") + '">' + e.kind + "</span></td>" +
+    '<td><span class="kind-badge ' + kindClassName(e.kind) + '">' + escapeHtml(e.kind) + "</span></td>" +
     "<td>" + escapeHtml(formatModelLabel(e.model)) + maxBadge + "</td>" +
     '<td class="num">' + formatTokens(eventTokenCount(e)) + "</td>" +
     '<td class="num">' + eventRequestsText(e) + "</td>" +

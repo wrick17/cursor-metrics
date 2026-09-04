@@ -1,6 +1,11 @@
-import { describe, expect, it } from "bun:test";
-import { attachMessageModels, nearestUsageEventModel, parseBubbleText } from "../src/conversation-messages";
-import { parseComposerHeaders } from "../src/conversation-titles";
+import { afterEach, describe, expect, it, spyOn } from "bun:test";
+import { Database } from "bun:sqlite";
+import { mkdtempSync } from "fs";
+import { tmpdir } from "os";
+import { join } from "path";
+import { attachMessageModels, loadConversationMessages, nearestUsageEventModel, parseBubbleText } from "../src/conversation-messages";
+import { buildConversationTitleMap, parseComposerHeaders } from "../src/conversation-titles";
+import * as dbReader from "../src/cursor-db-reader";
 import type { UsageEvent } from "../src/cursor-api-types";
 
 const baseEvent: UsageEvent = {
@@ -96,5 +101,64 @@ describe("attachMessageModels", () => {
 
   it("returns null when no event is close enough", () => {
     expect(nearestUsageEventModel(5_000_000, [baseEvent])).toBeNull();
+  });
+});
+
+describe("conversation KV reads", () => {
+  const conversationId = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee";
+  const headerId = "bbbbbbbb-bbbb-cccc-dddd-eeeeeeeeeeee";
+  let spy: ReturnType<typeof spyOn> | undefined;
+
+  afterEach(() => {
+    spy?.mockRestore();
+    spy = undefined;
+  });
+
+  function createConversationDb(): string {
+    const dbPath = join(mkdtempSync(join(tmpdir(), "cursor-conv-db-")), "state.vscdb");
+    const db = new Database(dbPath);
+    db.run("CREATE TABLE ItemTable (key TEXT UNIQUE ON CONFLICT REPLACE, value BLOB)");
+    db.run("CREATE TABLE cursorDiskKV (key TEXT UNIQUE ON CONFLICT REPLACE, value BLOB)");
+    db.run("INSERT INTO ItemTable VALUES (?, ?)", [
+      "composer.composerHeaders",
+      JSON.stringify({ allComposers: [{ composerId: headerId, name: "From headers" }] }),
+    ]);
+    db.run("INSERT INTO cursorDiskKV VALUES (?, ?)", [
+      `composerData:${conversationId}`,
+      JSON.stringify({
+        name: "Composer title",
+        fullConversationHeadersOnly: [
+          { bubbleId: "bubble-a", type: 1 },
+          { bubbleId: "bubble-b", type: 2 },
+        ],
+      }),
+    ]);
+    db.run("INSERT INTO cursorDiskKV VALUES (?, ?)", [
+      `bubbleId:${conversationId}:bubble-a`,
+      JSON.stringify({ type: 1, text: "hello user" }),
+    ]);
+    db.run("INSERT INTO cursorDiskKV VALUES (?, ?)", [
+      `bubbleId:${conversationId}:bubble-b`,
+      JSON.stringify({ type: 2, text: "hello assistant" }),
+    ]);
+    db.close();
+    return dbPath;
+  }
+
+  it("builds titles from headers and composerData without sql.js", async () => {
+    const dbPath = createConversationDb();
+    spy = spyOn(dbReader, "getGlobalCursorDbPath").mockReturnValue(dbPath);
+    const titles = await buildConversationTitleMap([headerId, conversationId], "/unused");
+    expect(titles[headerId]).toBe("From headers");
+    expect(titles[conversationId]).toBe("Composer title");
+  });
+
+  it("loads ordered conversation messages from the btree reader", async () => {
+    const dbPath = createConversationDb();
+    spy = spyOn(dbReader, "getGlobalCursorDbPath").mockReturnValue(dbPath);
+    const messages = await loadConversationMessages(conversationId, "/unused");
+    expect(messages.map((m) => m.text)).toEqual(["hello user", "hello assistant"]);
+    expect(messages[0]?.role).toBe("user");
+    expect(messages[1]?.role).toBe("assistant");
   });
 });

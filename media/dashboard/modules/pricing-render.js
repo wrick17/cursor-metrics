@@ -198,7 +198,7 @@ function renderModelRow(entry, usageMap, used) {
         "</span>" +
       "</td>" +
       '<td>' + escapeHtml(entry.provider) + "</td>" +
-      '<td><span class="pricing-pool-badge pricing-pool-' + entry.pool + '">' + escapeHtml(poolLabel(entry.pool)) + "</span></td>" +
+      '<td><span class="pricing-pool-badge pricing-pool-' + (entry.pool === "firstParty" || entry.pool === "api" ? entry.pool : "unknown") + '">' + escapeHtml(poolLabel(entry.pool)) + "</span></td>" +
       '<td class="num">' + inputCell + "</td>" +
       '<td class="num">' + formatRateCell(rates.cacheWrite) + "</td>" +
       '<td class="num">' + formatRateCell(rates.cacheRead) + "</td>" +
@@ -266,7 +266,7 @@ export function renderPricing() {
   }
 
   if (!pricing) {
-    ui.pricingBody.innerHTML = '<tr><td colspan="10" class="muted" style="text-align:center;padding:24px;">' + escapeHtml(t("noData")) + "</td></tr>";
+    ui.pricingBody.innerHTML = '<tr><td colspan="11" class="muted" style="text-align:center;padding:24px;">' + escapeHtml(t("noData")) + "</td></tr>";
     return;
   }
 
@@ -290,7 +290,7 @@ export function renderPricing() {
   });
 
   if (rows.length === 0) {
-    ui.pricingBody.innerHTML = '<tr><td colspan="10" class="muted" style="text-align:center;padding:24px;">' + escapeHtml(t("pricingNoModels")) + "</td></tr>";
+    ui.pricingBody.innerHTML = '<tr><td colspan="11" class="muted" style="text-align:center;padding:24px;">' + escapeHtml(t("pricingNoModels")) + "</td></tr>";
     return;
   }
 

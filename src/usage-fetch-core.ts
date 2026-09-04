@@ -7,10 +7,11 @@ import type {
   SetupCache,
   UsagePayload,
 } from "./cursor-api-types";
-import { asRecord, nextMonth, toNumber, withTimeout } from "./cursor-api-utils";
+import { asRecord, matchesTeamMember, nextMonth, safeJson, toNumber, withTimeout } from "./cursor-api-utils";
 import { billingCycleEndIso, fetchCurrentPeriodUsage } from "./cursor-period-usage";
 import { ensureSetup, withPlanInfo } from "./cursor-setup";
 import {
+  extractPoolUsageFromSummary,
   extractTeamRequestLimit,
   extractTeamUsedRequests,
   extractUsageFromSummary,
@@ -33,7 +34,12 @@ async function fetchUsageSummary(headers: CursorHeaders): Promise<Record<string,
     apiLog(`usage-summary failed: ${res.status}`);
     return null;
   }
-  return asRecord(await res.json());
+  const data = asRecord(await safeJson(res));
+  if (!data) {
+    apiLog("usage-summary returned invalid JSON");
+    return null;
+  }
+  return data;
 }
 
 function buildSoloOnDemand(
@@ -107,11 +113,15 @@ async function enrichPayloadOnDemand(
       return payload;
     }
 
-    const dataRecord = asRecord(await teamSpendRes.json()) ?? {};
+    const dataRecord = asRecord(await safeJson(teamSpendRes));
+    if (!dataRecord) {
+      apiLog("get-team-spend enrichment skipped: invalid JSON");
+      return payload;
+    }
     const members: unknown[] = Array.isArray(dataRecord.teamMemberSpend) ? dataRecord.teamMemberSpend : [];
     const me = members.find((member) => {
       const record = asRecord(member);
-      return record && (record.email === auth.email || String(record.userId) === auth.userId);
+      return record ? matchesTeamMember(record, auth) : false;
     });
     if (!me) return payload;
 
@@ -153,18 +163,25 @@ async function fetchTeamUsage(
 
   let usageTotals: RequestTotals | null = null;
   if (usageRes.ok) {
-    const usage = await usageRes.json();
-    usageTotals = extractUsageTotals(usage);
+    const usage = await safeJson(usageRes);
+    if (!usage) {
+      apiLog("Usage API failed in team mode: invalid JSON");
+    } else {
+      usageTotals = extractUsageTotals(usage);
+    }
   } else {
     apiLog(`Usage API failed in team mode: ${usageRes.status}`);
   }
 
-  const data = await teamSpendRes.json();
-  const dataRecord = asRecord(data) ?? {};
+  const dataRecord = asRecord(await safeJson(teamSpendRes));
+  if (!dataRecord) {
+    apiLog("get-team-spend failed: invalid JSON");
+    return null;
+  }
   const members: unknown[] = Array.isArray(dataRecord.teamMemberSpend) ? dataRecord.teamMemberSpend : [];
   const me = members.find((member) => {
     const record = asRecord(member);
-    return record && (record.email === auth.email || String(record.userId) === auth.userId);
+    return record ? matchesTeamMember(record, auth) : false;
   });
 
   if (!me) {
@@ -195,7 +212,7 @@ async function fetchTeamUsage(
       limit,
     },
     onDemand,
-    poolUsage: null,
+    poolUsage: extractPoolUsageFromSummary(usageSummary),
     resetsAt: billingCycleEndIso(periodUsage) ?? resetsAt,
     planInfo: null,
   };
@@ -227,9 +244,15 @@ async function fetchSoloUsage(
     return null;
   }
 
-  const usage = await usageRes.json();
+  const usage = await safeJson(usageRes);
+  if (!usage) {
+    apiLog("Usage API failed: invalid JSON");
+    return null;
+  }
   const totals = extractUsageTotals(usage);
-  const resetsAt = usage.startOfMonth ? nextMonth(usage.startOfMonth) : null;
+  const usageRecord = asRecord(usage);
+  const startOfMonth = typeof usageRecord?.startOfMonth === "string" ? usageRecord.startOfMonth : null;
+  const resetsAt = startOfMonth ? nextMonth(startOfMonth) : null;
   const onDemand = buildSoloOnDemand(setup, periodUsage, usageSummary);
 
   const result: UsagePayload = {
@@ -263,6 +286,11 @@ export async function fetchUsageData(): Promise<UsagePayload | null> {
     return null;
   }
 
+  if (setup.isTeamMember) {
+    const payload = await fetchTeamUsage(auth, headers, setup);
+    return payload ? withPlanInfo(payload, setup) : null;
+  }
+
   const summary = await fetchUsageSummary(headers);
   if (summary) {
     const fromSummary = extractUsageFromSummary(summary, setup.onDemandEnabled);
@@ -275,10 +303,6 @@ export async function fetchUsageData(): Promise<UsagePayload | null> {
     apiLog("usage-summary returned no usable plan limits; falling back to legacy endpoints");
   }
 
-  if (setup.isTeamMember) {
-    const payload = await fetchTeamUsage(auth, headers, setup);
-    return payload ? withPlanInfo(payload, setup) : null;
-  }
   const payload = await fetchSoloUsage(auth, headers, setup);
   return payload ? withPlanInfo(payload, setup) : null;
 }

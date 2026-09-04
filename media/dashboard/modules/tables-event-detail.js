@@ -18,6 +18,7 @@ import {
 import { t } from "./i18n.js";
 import { translateVariantLabel } from "./pricing-catalog-i18n.js";
 import { getEventPricingEstimate } from "./pricing.js";
+import { formatRateUsd } from "../../../src/model-pricing.ts";
 import { renderTable } from "./tables-events.js";
 
 function renderTokenBreakdown(event) {
@@ -34,7 +35,7 @@ function renderTokenBreakdown(event) {
   ].filter((s) => s.value > 0);
 
   if (total === 0) {
-    return '<p class="muted small">No token breakdown available for this event.</p>';
+    return '<p class="muted small">' + escapeHtml(t("eventNoTokenBreakdown")) + "</p>";
   }
 
   const bar = segments.map((s) =>
@@ -65,23 +66,18 @@ function renderEventDetailMetrics(event) {
   const promptSide = input + cacheWrite + cacheRead;
 
   const items = [
-    ["Output / input", ratioText(output, input)],
-    ["Cache read share", pctOf(cacheRead, promptSide)],
-    ["Tokens / request", requests ? formatTokenCount(total / requests) : "\u2014"],
+    [t("eventOutputInput"), ratioText(output, input)],
+    [t("eventCacheReadShare"), pctOf(cacheRead, promptSide)],
+    [t("eventTokensPerRequest"), requests ? formatTokenCount(total / requests) : "\u2014"],
   ];
   if (spendCents > 0 && total > 0) {
-    items.push(["Cost / 1M tokens", formatCents((spendCents / total) * 1_000_000)]);
+    items.push([t("eventCostPerMillion"), formatCents((spendCents / total) * 1_000_000)]);
   }
   if (spendCents > 0 && requests > 0) {
-    items.push(["Cost / request", formatCents(spendCents / requests)]);
+    items.push([t("eventCostPerRequest"), formatCents(spendCents / requests)]);
   }
 
-  return items.map(([label, value]) => "<dt>" + label + "</dt><dd>" + value + "</dd>").join("");
-}
-
-function formatRateUsd(rate) {
-  if (rate === undefined) return "—";
-  return "$" + rate.toFixed(rate < 1 ? 3 : 2);
+  return items.map(([label, value]) => "<dt>" + escapeHtml(label) + "</dt><dd>" + value + "</dd>").join("");
 }
 
 function renderEventDetailOfficialPricing(event) {
@@ -164,26 +160,26 @@ function renderEventDetailCost(event) {
   const rows = [];
 
   if (showSpend) {
-    if (tokenCost > 0) rows.push(["Model token cost", formatCents(tokenCost)]);
-    if (fee > 0) rows.push(["Cursor token fee", formatCents(fee)]);
-    rows.push(["Total charged", formatCents(charged)]);
+    if (tokenCost > 0) rows.push([t("eventModelTokenCost"), formatCents(tokenCost)]);
+    if (fee > 0) rows.push([t("eventCursorTokenFee"), formatCents(fee)]);
+    rows.push([t("eventTotalCharged"), formatCents(charged)]);
   } else {
-    rows.push(["Billing", "Included in plan"]);
-    if (tokenCost > 0) rows.push(["Token value (est.)", formatCents(tokenCost)]);
+    rows.push([t("eventBilling"), t("eventIncludedInPlan")]);
+    if (tokenCost > 0) rows.push([t("eventTokenValueEst"), formatCents(tokenCost)]);
   }
 
-  return rows.map(([label, value]) => "<dt>" + label + "</dt><dd>" + value + "</dd>").join("");
+  return rows.map(([label, value]) => "<dt>" + escapeHtml(label) + "</dt><dd>" + value + "</dd>").join("");
 }
 
 function renderEventDetailFlags(event) {
   const flags = [
-    { label: "Token-based", on: !!event.isTokenBasedCall },
-    { label: "Headless agent", on: !!event.isHeadless },
-    { label: "Chargeable", on: !!event.isChargeable },
-    { label: "Max mode", on: !!event.maxMode },
+    { label: t("eventFlagTokenBased"), on: !!event.isTokenBasedCall },
+    { label: t("eventFlagHeadless"), on: !!event.isHeadless },
+    { label: t("eventFlagChargeable"), on: !!event.isChargeable },
+    { label: t("eventFlagMaxMode"), on: !!event.maxMode },
   ];
   return flags.map((f) =>
-    '<span class="detail-flag' + (f.on ? " on" : "") + '">' + f.label + "</span>"
+    '<span class="detail-flag' + (f.on ? " on" : "") + '">' + escapeHtml(f.label) + "</span>"
   ).join("");
 }
 
@@ -199,17 +195,17 @@ export function showEventDetail(event) {
 
   ui.eventDetailBody.innerHTML =
     '<div class="event-detail-grid">' +
-      '<div class="event-detail-stat"><span class="label">Total tokens</span><span class="value">' + formatTokenCount(eventTokenCount(event)) + "</span></div>" +
-      '<div class="event-detail-stat"><span class="label">Requests</span><span class="value">' + eventRequestsText(event) + "</span></div>" +
-      '<div class="event-detail-stat"><span class="label">Spend</span><span class="value">' + eventSpendText(event) + "</span></div>" +
+      '<div class="event-detail-stat"><span class="label">' + escapeHtml(t("eventTotalTokens")) + '</span><span class="value">' + formatTokenCount(eventTokenCount(event)) + "</span></div>" +
+      '<div class="event-detail-stat"><span class="label">' + escapeHtml(t("colRequests")) + '</span><span class="value">' + eventRequestsText(event) + "</span></div>" +
+      '<div class="event-detail-stat"><span class="label">' + escapeHtml(t("colSpend")) + '</span><span class="value">' + eventSpendText(event) + "</span></div>" +
     "</div>" +
-    '<div class="event-detail-section"><h3>Token breakdown</h3>' + renderTokenBreakdown(event) + "</div>" +
-    '<div class="event-detail-section"><h3>Efficiency</h3><dl class="detail-kv">' + renderEventDetailMetrics(event) + "</dl></div>" +
+    '<div class="event-detail-section"><h3>' + escapeHtml(t("eventTokenBreakdown")) + "</h3>" + renderTokenBreakdown(event) + "</div>" +
+    '<div class="event-detail-section"><h3>' + escapeHtml(t("eventEfficiency")) + "</h3><dl class=\"detail-kv\">" + renderEventDetailMetrics(event) + "</dl></div>" +
     renderEventDetailOfficialPricing(event) +
-    '<div class="event-detail-section"><h3>Cost</h3><dl class="detail-kv">' + renderEventDetailCost(event) + "</dl></div>" +
-    '<div class="event-detail-section"><h3>Details</h3><div class="detail-flags">' + renderEventDetailFlags(event) + "</div>" +
-    '<dl class="detail-kv" style="margin-top:8px;"><dt>Type</dt><dd>' + escapeHtml(event.kind) + "</dd>" +
-    "<dt>Model ID</dt><dd>" + escapeHtml(event.model) + "</dd></dl></div>";
+    '<div class="event-detail-section"><h3>' + escapeHtml(t("eventCost")) + "</h3><dl class=\"detail-kv\">" + renderEventDetailCost(event) + "</dl></div>" +
+    '<div class="event-detail-section"><h3>' + escapeHtml(t("eventDetails")) + "</h3><div class=\"detail-flags\">" + renderEventDetailFlags(event) + "</div>" +
+    '<dl class="detail-kv" style="margin-top:8px;"><dt>' + escapeHtml(t("colType")) + "</dt><dd>" + escapeHtml(event.kind) + "</dd>" +
+    "<dt>" + escapeHtml(t("eventModelId")) + "</dt><dd>" + escapeHtml(event.model) + "</dd></dl></div>";
 
   ui.eventDetailOverlay.classList.remove("hidden");
   ui.eventDetailOverlay.setAttribute("aria-hidden", "false");

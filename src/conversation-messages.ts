@@ -1,5 +1,5 @@
 import type { ConversationMessage, UsageEvent } from "./cursor-api-types";
-import { queryTableValue, withCursorStateDb } from "./cursor-state-db";
+import { getGlobalCursorDbPath, withCursorKvStore } from "./cursor-db-reader";
 
 type BubbleHeader = {
   bubbleId?: string;
@@ -139,24 +139,21 @@ function parseConversationOrder(raw: string | null): BubbleHeader[] {
 
 export async function loadConversationMessages(
   conversationId: string,
-  extensionPath: string,
+  _extensionPath: string,
   usageEvents: UsageEvent[] = [],
 ): Promise<ConversationMessage[]> {
   if (!conversationId) return [];
 
-  const messages = await withCursorStateDb(extensionPath, (db) => {
-    const composerRaw = queryTableValue(db, "cursorDiskKV", `composerData:${conversationId}`);
+  const messages = withCursorKvStore(getGlobalCursorDbPath(), (store) => {
+    const composerRaw = store.get("cursorDiskKV", `composerData:${conversationId}`);
     const order = parseConversationOrder(composerRaw);
     const prefix = `bubbleId:${conversationId}:`;
-    const rows = db.exec("SELECT key, value FROM cursorDiskKV WHERE key LIKE ?", [`${prefix}%`]);
     const bubbleById = new Map<string, BubbleRecord>();
 
-    for (const row of rows[0]?.values ?? []) {
-      const key = String(row[0] ?? "");
-      if (!key.startsWith(prefix)) continue;
-      const bubbleId = key.slice(prefix.length);
+    for (const row of store.getByPrefix("cursorDiskKV", prefix)) {
+      const bubbleId = row.key.slice(prefix.length);
       try {
-        bubbleById.set(bubbleId, JSON.parse(String(row[1])) as BubbleRecord);
+        bubbleById.set(bubbleId, JSON.parse(row.value) as BubbleRecord);
       } catch {
         continue;
       }

@@ -1,11 +1,11 @@
 import { existsSync, mkdirSync, readFileSync, unlinkSync, writeFileSync } from "fs";
 import { join } from "path";
-import type { ModelPricingCatalog } from "./model-pricing-types";
+import type { ModelPricingCatalog, ModelPricingCatalogOverlay, ParsedPlanPricingInfo } from "./model-pricing-types";
 
 export type PricingCatalogOverlay = {
   syncedAt: number;
   sourceUrl: string;
-  catalog: Partial<ModelPricingCatalog>;
+  catalog: ModelPricingCatalogOverlay;
   /** Model ids present in docs sync but not in the extension bundled catalog. */
   runtimeOnlyModelIds?: string[];
 };
@@ -25,7 +25,8 @@ export class PricingCatalogStore {
       const raw = JSON.parse(readFileSync(this.overlayPath, "utf8")) as PricingCatalogOverlay;
       if (!raw || typeof raw !== "object" || !raw.catalog) return null;
       return raw;
-    } catch {
+    } catch (err) {
+      console.error("Failed to parse pricing catalog overlay", err);
       return null;
     }
   }

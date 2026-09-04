@@ -53,6 +53,14 @@ function extractPoolUsageFromPlan(plan: Record<string, unknown>): UsagePayload["
   };
 }
 
+export function extractPoolUsageFromSummary(summaryRaw: unknown): UsagePayload["poolUsage"] {
+  const summary = asRecord(summaryRaw);
+  const individual = summary ? asRecord(summary.individualUsage) : null;
+  const plan = individual ? asRecord(individual.plan) : null;
+  if (!plan) return null;
+  return extractPoolUsageFromPlan(plan);
+}
+
 export function extractUsageFromSummary(
   summaryRaw: unknown,
   stripeOnDemandEnabled: boolean,

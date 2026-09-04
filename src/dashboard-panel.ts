@@ -27,6 +27,7 @@ type RefreshFn = (opts?: UpdateUsageOptions) => Promise<void>;
 type StateProvider = () => DashboardState | null;
 type LocaleChangeFn = (locale: DashboardLocale) => void;
 type PreviewChangeFn = (enabled: boolean) => void | Promise<void>;
+type ConversationMessages = Awaited<ReturnType<typeof loadConversationMessages>>;
 
 type DashboardEventFilter = {
   range: UsageDuration;
@@ -39,6 +40,12 @@ function isUsageDuration(value: unknown): value is UsageDuration {
 
 function isUsageFilter(value: unknown): value is UsageFilter {
   return value === "all" || value === "included" || value === "ondemand";
+}
+
+export function isSafeConversationId(id: string): boolean {
+  const trimmed = id.trim();
+  if (trimmed.length < 1 || trimmed.length > 128) return false;
+  return /^[0-9a-fA-F-]+$/.test(trimmed);
 }
 
 export const OPEN_DASHBOARD_COMMAND = "cursor-usage.openDashboard";
@@ -84,6 +91,7 @@ export class DashboardPanel {
     range: "billingCycle",
     usageFilter: "all",
   };
+  private readonly conversationLoads = new Map<string, Promise<ConversationMessages>>();
 
   static getDashboardEventFilter(): DashboardEventFilter | null {
     return DashboardPanel.currentPanel?.dashboardPrefs ?? null;
@@ -171,31 +179,44 @@ export class DashboardPanel {
           await syncUsageDurationToSettings(msg.range, hasBillingCycle);
           this.dashboardPrefs.range = normalized;
         } else if (msg.type === "syncDashboardPrefs") {
-          if (isUsageDuration(msg.range)) this.dashboardPrefs.range = msg.range;
+          if (isUsageDuration(msg.range)) {
+            const hasBillingCycle = Boolean(getState()?.resetsAt);
+            this.dashboardPrefs.range = normalizeUsageDuration(msg.range, hasBillingCycle);
+          }
           if (isUsageFilter(msg.usageFilter)) this.dashboardPrefs.usageFilter = msg.usageFilter;
           // Webview already filters charts/tables locally from the full event list.
         } else if (msg.type === "getConversationMessages" && typeof msg.conversationId === "string") {
-          try {
-            const conversationEvents = this.getState()?.events.filter(
-              (event) => event.conversationId === msg.conversationId,
-            ) ?? [];
-            const messages = await loadConversationMessages(
-              msg.conversationId,
-              this.context.extensionPath,
-              conversationEvents,
-            );
+          const conversationId = msg.conversationId.trim();
+          if (!isSafeConversationId(conversationId)) {
             this.panel.webview.postMessage({
               type: "conversationMessages",
-              conversationId: msg.conversationId,
+              conversationId,
+              messages: [],
+              error: "invalid conversation id",
+            });
+            return;
+          }
+          const inFlight = this.conversationLoads.get(conversationId);
+          const loadPromise = inFlight ?? this.loadConversationMessagesFor(conversationId);
+          if (!inFlight) this.conversationLoads.set(conversationId, loadPromise);
+          try {
+            const messages = await loadPromise;
+            this.panel.webview.postMessage({
+              type: "conversationMessages",
+              conversationId,
               messages,
             });
           } catch (err: unknown) {
             this.panel.webview.postMessage({
               type: "conversationMessages",
-              conversationId: msg.conversationId,
+              conversationId,
               messages: [],
               error: err instanceof Error ? err.message : String(err),
             });
+          } finally {
+            if (this.conversationLoads.get(conversationId) === loadPromise) {
+              this.conversationLoads.delete(conversationId);
+            }
           }
         } else if (msg.type === "refresh") {
           this.postLoading(true);
@@ -230,6 +251,17 @@ export class DashboardPanel {
       },
       null,
       this.disposables,
+    );
+  }
+
+  private loadConversationMessagesFor(conversationId: string): Promise<ConversationMessages> {
+    const conversationEvents = this.getState()?.events.filter(
+      (event) => event.conversationId === conversationId,
+    ) ?? [];
+    return loadConversationMessages(
+      conversationId,
+      this.context.extensionPath,
+      conversationEvents,
     );
   }
 

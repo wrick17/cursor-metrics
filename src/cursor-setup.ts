@@ -1,6 +1,6 @@
 import { apiLog } from "./cursor-api-logger";
 import type { CursorHeaders, SetupCache, UsagePayload } from "./cursor-api-types";
-import { asRecord, withTimeout } from "./cursor-api-utils";
+import { asRecord, matchesTeamMember, safeJson, withTimeout } from "./cursor-api-utils";
 import { buildPlanInfo } from "./plan-labels";
 import { getCachedSetup, storeSetupCache } from "./cursor-setup-cache";
 import { extractUsageFromSummary, extractUsageTotals } from "./cursor-usage-parsing";
@@ -52,18 +52,15 @@ async function findCurrentTeamMember(
     return null;
   }
 
-  const dataRecord = asRecord(await res.json()) ?? {};
+  const dataRecord = asRecord(await safeJson(res));
+  if (!dataRecord) {
+    apiLog("get-team-spend for plan info skipped: invalid JSON");
+    return null;
+  }
   const members: unknown[] = Array.isArray(dataRecord.teamMemberSpend) ? dataRecord.teamMemberSpend : [];
   const me = members.find((member) => {
     const record = asRecord(member);
-    if (!record) return false;
-    const memberEmail = typeof record.email === "string" ? record.email : null;
-    const memberAuthId = typeof record.authId === "string" ? record.authId : null;
-    return (
-      (email && memberEmail === email) ||
-      (memberAuthId && memberAuthId === userId) ||
-      String(record.userId) === userId
-    );
+    return record ? matchesTeamMember(record, { email, userId }) : false;
   });
   return me ? (asRecord(me) ?? null) : null;
 }
@@ -88,15 +85,24 @@ export async function ensureSetup(
 
   apiLog(`Setup: Stripe ${stripeRes.status}, Usage ${usageRes.status}, Summary ${summaryRes.status}`);
 
-  const stripe = stripeRes.ok ? await stripeRes.json() : null;
-  const usage = usageRes.ok ? await usageRes.json() : null;
-  const summary = summaryRes.ok ? await summaryRes.json() : null;
+  const stripe = stripeRes.ok ? await safeJson(stripeRes) : null;
+  const usage = usageRes.ok ? await safeJson(usageRes) : null;
+  const summary = summaryRes.ok ? await safeJson(summaryRes) : null;
+  if (!stripe && !usage && !summary) {
+    apiLog("Setup skipped: Stripe, Usage, and Summary all failed");
+    return null;
+  }
+  if (!stripe && !summary) {
+    apiLog("Setup skipped: Stripe and Summary failed");
+    return null;
+  }
+  const stripeRecord = asRecord(stripe);
   const totals = extractUsageTotals(usage);
-  const summaryPayload = extractUsageFromSummary(summary, Boolean(stripe?.isOnBillableAuto));
+  const summaryPayload = extractUsageFromSummary(summary, Boolean(stripeRecord?.isOnBillableAuto));
   const summaryLimit = summaryPayload?.includedRequests.limit ?? 0;
-  const isTeamMember = !!(asRecord(stripe)?.isTeamMember && asRecord(stripe)?.teamId);
+  const isTeamMember = !!(stripeRecord?.isTeamMember && stripeRecord?.teamId);
   const planFields = readPlanFields(stripe, summary);
-  const teamId = asRecord(stripe)?.teamId as number | undefined;
+  const teamId = stripeRecord?.teamId as number | undefined;
   const teamMember =
     isTeamMember && teamId
       ? await findCurrentTeamMember(headers, teamId, userId, email)
@@ -108,7 +114,6 @@ export async function ensureSetup(
     );
   }
 
-  const stripeRecord = asRecord(stripe);
   const setup: SetupCache = {
     isTeamMember,
     teamId,
@@ -132,10 +137,16 @@ export async function ensureSetup(
       isYearlyPlan: planFields.isYearlyPlan,
     }),
   };
-  storeSetupCache(setup, sessionToken);
+  if (stripe) {
+    storeSetupCache(setup, sessionToken);
+    apiLog(
+      `Setup cached: team=${setup.isTeamMember}, teamId=${setup.teamId}, maxReq=${setup.maxRequestUsage}, onDemandEnabled=${setup.onDemandEnabled}, plan=${setup.planInfo?.displayName ?? "unknown"}`,
+    );
+  } else {
+    apiLog(
+      `Setup uncached (no Stripe): maxReq=${setup.maxRequestUsage}, plan=${setup.planInfo?.displayName ?? "unknown"}`,
+    );
+  }
 
-  apiLog(
-    `Setup cached: team=${setup.isTeamMember}, teamId=${setup.teamId}, maxReq=${setup.maxRequestUsage}, onDemandEnabled=${setup.onDemandEnabled}, plan=${setup.planInfo?.displayName ?? "unknown"}`,
-  );
   return setup;
 }

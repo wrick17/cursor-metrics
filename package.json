@@ -2,7 +2,7 @@
   "name": "cursor-usage",
   "displayName": "Cursor Usage (Community)",
   "description": "Shows your Cursor IDE usage (included requests and on-demand spend) in the status bar",
-  "version": "0.8.1",
+  "version": "1.0.0",
   "publisher": "fabervi",
   "license": "MIT",
   "private": true,
@@ -142,7 +142,8 @@
     "publish:vsm": "bun run package:vsm && bun scripts/publish-extension.mjs vsm",
     "publish:all": "bun run package && bun run publish:ovsx && bun run publish:vsm",
     "release": "bun run publish:all",
-    "screenshots": "bun scripts/capture-screenshots.mjs"
+    "screenshots": "bun scripts/capture-screenshots.mjs",
+    "test": "bun test --isolate"
   },
   "dependencies": {
     "sql.js": "^1.14.1"

@@ -1,4 +1,4 @@
-import * as vscode from "vscode";
+import type * as vscode from "vscode";
 import type { ChartMetric, UsageFilter } from "./dashboard-state";
 import { isUsageDuration } from "./duration-options";
 import type { UsageDuration } from "./model-breakdown";
@@ -25,9 +25,10 @@ function sanitizePinnedIds(value: unknown): string[] | undefined {
   if (!Array.isArray(value)) return undefined;
   const ids: string[] = [];
   for (const item of value) {
-    if (typeof item === "string" && item.length > 0 && !ids.includes(item)) {
-      ids.push(item);
-    }
+    if (typeof item !== "string" || item.length < 1 || item.length > 128) continue;
+    if (ids.includes(item)) continue;
+    ids.push(item);
+    if (ids.length >= 50) break;
   }
   return ids;
 }
@@ -54,7 +55,7 @@ export async function saveDashboardUiPreferences(
   patch: DashboardUiPreferences,
 ): Promise<DashboardUiPreferences> {
   const current = loadDashboardUiPreferences(context);
-  const next: DashboardUiPreferences = { ...current, ...patch };
+  const next: DashboardUiPreferences = { ...current, ...sanitize(patch) };
   await context.globalState.update(GLOBAL_STATE_KEY, next);
   return next;
 }

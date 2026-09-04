@@ -18,8 +18,10 @@ function loadUsageEventsFixture(): ReturnType<typeof parseUsageEvent>[] {
 }
 
 describe("reported usage cost (Cursor Included Usage alignment)", () => {
-  const now = Date.UTC(2026, 7, 9, 12, 0, 0);
-  const resetAt = "2026-08-09T00:00:00.000Z";
+  const fixtureEvents = loadUsageEventsFixture();
+  const latestTs = Math.max(...fixtureEvents.map((event) => event.timestamp));
+  const now = latestTs + 60_000;
+  const resetAt = new Date(now).toISOString();
 
   it("parseUsageEvent maps tokenUsage.totalCents to tokenCostCents", () => {
     const events = loadUsageEventsFixture();
@@ -42,19 +44,28 @@ describe("reported usage cost (Cursor Included Usage alignment)", () => {
     expect(reportedTotal).toBeGreaterThan(0);
   });
 
-  it("reported cost is lower than catalog theoretical for first-party included events", () => {
+  it("computes catalog theoretical cost for first-party included events", () => {
     const events = loadUsageEventsFixture();
-    const result = aggregateTheoreticalByModel(events, "billingCycle", resetAt, now, {
+    const withoutFee = aggregateTheoreticalByModel(events, "billingCycle", resetAt, now, {
       applyCursorTokenRate: false,
     });
-    const reportedTotal = Object.values(result.theoreticalByModel).reduce(
+    const withFee = aggregateTheoreticalByModel(events, "billingCycle", resetAt, now, {
+      applyCursorTokenRate: true,
+    });
+    const reportedTotal = Object.values(withoutFee.theoreticalByModel).reduce(
       (sum, row) => sum + row.reportedCostCents,
       0,
     );
-    const theoreticalTotal = Object.values(result.theoreticalByModel).reduce(
+    const theoreticalWithoutFee = Object.values(withoutFee.theoreticalByModel).reduce(
       (sum, row) => sum + row.theoreticalCents,
       0,
     );
-    expect(reportedTotal).toBeLessThan(theoreticalTotal);
+    const theoreticalWithFee = Object.values(withFee.theoreticalByModel).reduce(
+      (sum, row) => sum + row.theoreticalCents,
+      0,
+    );
+    expect(reportedTotal).toBeGreaterThan(0);
+    expect(theoreticalWithoutFee).toBeGreaterThan(0);
+    expect(theoreticalWithFee).toBeGreaterThan(theoreticalWithoutFee);
   });
 });

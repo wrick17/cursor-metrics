@@ -31,10 +31,13 @@ afterEach(() => {
 describe("pricing catalog sync parser", () => {
   it("parses model pricing rows from markdown", () => {
     const rows = parseMarkdownPricingTable(fixtureMarkdown);
-    expect(rows.length).toBe(4);
+    expect(rows.length).toBe(7);
     expect(rows[0]?.displayName).toBe("Claude Opus 5");
     expect(rows[0]?.rates.output).toBe(25);
-    expect(rows[2]?.hidden).toBe(true);
+    expect(rows[1]?.displayName).toBe("Claude Fable 5.1");
+    expect(rows[1]?.rates.cacheRead).toBe(0.25);
+    expect(rows[3]?.hidden).toBe(true);
+    expect(rows[5]?.hidden).toBe(true);
   });
 
   it("parses Cursor Models base rows and skips Fast variants", () => {
@@ -46,9 +49,22 @@ describe("pricing catalog sync parser", () => {
 
   it("parses plans and cursor token rate", () => {
     const plans = parseMarkdownPlans(fixtureMarkdown);
-    expect(plans.map((plan) => plan.id)).toEqual(["start", "pro"]);
+    expect(plans.map((plan) => plan.id)).toEqual(["start", "pro", "pro-plus"]);
     expect(plans[0]?.priceMonthly).toBe(649);
+    expect(plans[0]?.apiUsageIncluded).toBe(0);
+    expect(plans[1]?.apiUsageIncluded).toBeUndefined();
     expect(parseCursorTokenRate(fixtureMarkdown)).toBe(0.25);
+  });
+
+  it("preserves bundled apiUsageIncluded when plans table omits dollar amounts", () => {
+    const bundled = getBundledModelPricingCatalog();
+    const { overlay } = buildOverlayFromMarkdown(fixtureMarkdown, bundled);
+    const { catalog } = mergeCatalogsWithStats(bundled, overlay);
+    const pro = catalog.plans.find((plan) => plan.id === "pro");
+    const proPlus = catalog.plans.find((plan) => plan.id === "pro-plus");
+    expect(pro?.apiUsageIncluded).toBe(20);
+    expect(proPlus?.apiUsageIncluded).toBe(70);
+    expect(catalog.plans.find((plan) => plan.id === "start")?.apiUsageIncluded).toBe(0);
   });
 
   it("builds overlay and merges with bundled catalog", () => {
@@ -147,7 +163,7 @@ describe("pricing catalog sync parser", () => {
     expect(result.added).toBe(1);
     expect(result.runtimeOnlyModelIds).toEqual(["future-model-x"]);
     const loaded = store.load();
-    expect(loaded?.catalog.models?.length).toBeGreaterThanOrEqual(4);
+    expect(loaded?.catalog.models?.length).toBeGreaterThanOrEqual(7);
     expect(loaded?.runtimeOnlyModelIds).toEqual(["future-model-x"]);
     store.clear();
   });

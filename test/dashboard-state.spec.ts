@@ -379,8 +379,17 @@ describe("summarizeRange", () => {
 
   it("excludes events outside the cutoff", () => {
     const s = summarizeRange(sampleEvents, "1d", null, now);
-    // Only 1-day-old events: codex Included (2) + codex OnDemand (no included)
-    expect(s.includedRequests).toBe(2);
-    expect(s.onDemandSpendDollars).toBeCloseTo(3.2, 5);
+    // 1d is calendar today (UTC); sample events are 1+ days old
+    expect(s.includedRequests).toBe(0);
+    expect(s.onDemandSpendDollars).toBe(0);
+    expect(s.totalTokens).toBe(0);
+
+    const todayEvents: UsageEvent[] = [
+      { ...baseEvent, timestamp: now - 2 * 3_600_000, model: "gpt-5.3-codex", kind: "Included", totalTokens: 2000, requests: 2 },
+      { ...baseEvent, timestamp: now - 2 * 3_600_000, model: "gpt-5.3-codex", kind: "On-Demand", totalTokens: 3000, requests: 1.5, spendCents: 320, maxMode: true },
+    ];
+    const today = summarizeRange(todayEvents, "1d", null, now);
+    expect(today.includedRequests).toBe(2);
+    expect(today.onDemandSpendDollars).toBeCloseTo(3.2, 5);
   });
 });

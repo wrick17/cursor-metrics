@@ -1,6 +1,7 @@
 export { extractUsageTotals } from "./usage-totals-parsing";
 
 export {
+  extractPoolUsageFromSummary,
   extractTeamRequestLimit,
   extractTeamUsedRequests,
   extractUsageFromSummary,

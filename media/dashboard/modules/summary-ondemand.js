@@ -10,30 +10,30 @@ function breakdownMySpend(onDemand) {
 
 export function formatOnDemandFooter(onDemand) {
   if (onDemand.onDemandEnabled === false && !onDemand.breakdown) {
-    return "Left " + formatDollars(0) + " / " + formatDollars(0);
+    return t("onDemandLeft") + " " + formatDollars(0) + " / " + formatDollars(0);
   }
   const breakdown = onDemand.breakdown;
   if (!breakdown) {
     return onDemand.state === "unlimited" ? t("unlimited") : t("onDemandFooter");
   }
   if (onDemand.onDemandEnabled === false) {
-    const leftTotal = "Left " + formatDollars(0) + " / " + formatDollars(0);
+    const leftTotal = t("onDemandLeft") + " " + formatDollars(0) + " / " + formatDollars(0);
     if (breakdown.isTeamPool) {
-      return "Team " + formatDollars(breakdown.othersSpendDollars) + " · " + leftTotal;
+      return t("onDemandTeam") + " " + formatDollars(breakdown.othersSpendDollars) + " · " + leftTotal;
     }
     return leftTotal;
   }
   if (onDemand.state === "unlimited") {
     if (breakdown.isTeamPool) {
-      return "Team " + formatDollars(breakdown.othersSpendDollars) + " · " + t("unlimited");
+      return t("onDemandTeam") + " " + formatDollars(breakdown.othersSpendDollars) + " · " + t("unlimited");
     }
     return t("unlimited");
   }
   if (onDemand.state !== "limited") return t("onDemandFooter");
   const limit = onDemand.limitDollars || 0;
-  const leftTotal = "Left " + formatDollars(breakdown.remainingDollars) + " / " + formatDollars(limit);
+  const leftTotal = t("onDemandLeft") + " " + formatDollars(breakdown.remainingDollars) + " / " + formatDollars(limit);
   if (breakdown.isTeamPool) {
-    return "Team " + formatDollars(breakdown.othersSpendDollars) + " · " + leftTotal;
+    return t("onDemandTeam") + " " + formatDollars(breakdown.othersSpendDollars) + " · " + leftTotal;
   }
   return leftTotal;
 }

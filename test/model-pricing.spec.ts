@@ -71,7 +71,7 @@ describe("resolveModelPricing", () => {
     expect(detailed?.variant?.id).toBe("fast");
     expect(detailed?.entry.pool).toBe("firstParty");
     expect(detailed?.effectiveRates.input).toBe(4);
-    expect(detailed?.effectiveRates.output).toBe(12);
+    expect(detailed?.effectiveRates.output).toBe(18);
   });
 
   it("resolves cursor-grok-4.6-fast to Cursor Grok 4.6 custom rates", () => {

@@ -1,12 +1,11 @@
 ﻿import { DAY_MS, local, refs, ui } from "./core.js";
 import { getDateLocale, t } from "./i18n.js";
 import { getBillingCycleCutoff } from "../../../src/cursor-api-utils.ts";
+import { DEFAULT_EUR_USD_RATE } from "../../../src/dashboard-locale.ts";
 import { eventRequestCount, eventTokenCount } from "../../../src/cursor-usage-parsing.ts";
+import { startOfUtcDay } from "../../../src/utc-day.ts";
 
-export function startOfUtcDay(ts) {
-  const d = new Date(ts);
-  return Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate());
-}
+export { startOfUtcDay };
 
 export function getDurationCutoff(range, resetAtIso, now) {
   if (range === "billingCycle") {
@@ -36,9 +35,6 @@ export function formatTokens(n) {
   if (n >= 1e3) return trim(n / 1e3) + "K";
   return String(Math.round(n));
 }
-
-/** Keep in sync with src/dashboard-locale.ts DEFAULT_EUR_USD_RATE */
-export const DEFAULT_EUR_USD_RATE = 0.92;
 
 export function getActiveCurrency() {
   const selected = ui.currencySelect?.value;
@@ -266,10 +262,8 @@ export function formatResetCountdown(iso) {
   const reset = new Date(iso);
   const days = Math.max(0, Math.ceil((reset.getTime() - Date.now()) / DAY_MS));
   const formatted = reset.toLocaleDateString(getDateLocale(), { month: "short", day: "numeric", year: "numeric" });
-  if (local.locale === "it") {
-    return "Reset tra " + days + (days === 1 ? " giorno" : " giorni") + " il " + formatted;
-  }
-  return "Resets in " + days + " day" + (days === 1 ? "" : "s") + " on " + formatted;
+  const dayLabel = days === 1 ? t("billingDayOne") : t("billingDayMany");
+  return t("resetIn") + " " + days + " " + dayLabel + " " + t("resetOn") + " " + formatted;
 }
 
 export function setActiveRangeButton() {
@@ -283,7 +277,7 @@ export function setActiveRangeButton() {
 }
 
 export function formatModelLabel(model) {
-  if (model === "default") return "Auto";
+  if (model === "default") return t("modelAuto");
   return model;
 }
 

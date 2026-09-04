@@ -1,9 +1,7 @@
 import { existsSync } from "fs";
-import { homedir } from "os";
-import { join } from "path";
 import { apiLog } from "./cursor-api-logger";
 import type { AuthInfo, CursorHeaders } from "./cursor-api-types";
-import { readCursorAuthValuesFromDb, type CursorAuthValues } from "./cursor-db-reader";
+import { getGlobalCursorDbPath, readCursorAuthValuesFromDb, type CursorAuthValues } from "./cursor-db-reader";
 import { invalidateSetupCache } from "./cursor-setup-cache";
 
 const AUTH_CACHE_TTL = 10_000;
@@ -13,17 +11,6 @@ let cachedAuth: { info: AuthInfo | null; ts: number; sessionToken: string | null
   ts: 0,
   sessionToken: null,
 };
-
-function getDbPath(): string {
-  switch (process.platform) {
-    case "darwin":
-      return join(homedir(), "Library/Application Support/Cursor/User/globalStorage/state.vscdb");
-    case "win32":
-      return join(process.env.APPDATA ?? join(homedir(), "AppData/Roaming"), "Cursor/User/globalStorage/state.vscdb");
-    default:
-      return join(homedir(), ".config/Cursor/User/globalStorage/state.vscdb");
-  }
-}
 
 function decodeJwtPayload(jwt: string): Record<string, unknown> | null {
   try {
@@ -46,7 +33,7 @@ function parseUserIdFromJwt(jwt: string): string | null {
 }
 
 export async function getCursorToken(): Promise<AuthInfo | null> {
-  const dbPath = getDbPath();
+  const dbPath = getGlobalCursorDbPath();
 
   if (!existsSync(dbPath)) {
     apiLog("Database file does not exist");

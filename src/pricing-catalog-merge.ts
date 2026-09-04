@@ -1,6 +1,8 @@
 import type {
   ModelPricingCatalog,
+  ModelPricingCatalogOverlay,
   ModelPricingEntry,
+  ParsedPlanPricingInfo,
   PlanPricingInfo,
   TokenRatesPerMillion,
 } from "./model-pricing-types";
@@ -35,6 +37,7 @@ function mergeModelEntry(base: ModelPricingEntry, patch: ModelPricingEntry): Mod
     notes: patch.notes ?? base.notes,
     docsUrl: patch.docsUrl ?? base.docsUrl,
     aliases: base.aliases,
+    // Overlay from docs updates rates/notes only; aliases and variants stay bundled.
     variants: base.variants,
   };
 }
@@ -53,17 +56,31 @@ export function findModelIndexById(models: ModelPricingEntry[], id: string): num
 
 export function mergeCatalogs(
   base: ModelPricingCatalog,
-  overlay?: Partial<ModelPricingCatalog> | null,
+  overlay?: ModelPricingCatalogOverlay | null,
 ): ModelPricingCatalog {
   return mergeCatalogsWithStats(base, overlay).catalog;
 }
 
-function mergePlans(base: PlanPricingInfo[], overlay: PlanPricingInfo[]): PlanPricingInfo[] {
+function mergePlans(base: PlanPricingInfo[], overlay: ParsedPlanPricingInfo[]): PlanPricingInfo[] {
   const byId = new Map(overlay.map((plan) => [plan.id, plan]));
-  const merged = base.map((plan) => (byId.has(plan.id) ? { ...plan, ...byId.get(plan.id)! } : plan));
+  const merged = base.map((plan) => {
+    const patch = byId.get(plan.id);
+    if (!patch) return plan;
+    return {
+      ...plan,
+      name: patch.name || plan.name,
+      priceMonthly: patch.priceMonthly ?? plan.priceMonthly,
+      apiUsageIncluded: patch.apiUsageIncluded ?? plan.apiUsageIncluded,
+    };
+  });
   for (const plan of overlay) {
     if (!base.some((entry) => entry.id === plan.id)) {
-      merged.push(plan);
+      merged.push({
+        id: plan.id,
+        name: plan.name,
+        priceMonthly: plan.priceMonthly,
+        apiUsageIncluded: plan.apiUsageIncluded ?? 0,
+      });
     }
   }
   return merged;
@@ -71,7 +88,7 @@ function mergePlans(base: PlanPricingInfo[], overlay: PlanPricingInfo[]): PlanPr
 
 export function mergeCatalogsWithStats(
   base: ModelPricingCatalog,
-  overlay?: Partial<ModelPricingCatalog> | null,
+  overlay?: ModelPricingCatalogOverlay | null,
 ): { catalog: ModelPricingCatalog; stats: MergeStats } {
   if (!overlay) {
     return { catalog: base, stats: { updated: 0, added: 0 } };

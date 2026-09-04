@@ -1,7 +1,7 @@
 import { cursorHeaders, getCursorToken } from "./cursor-auth";
 import { apiLog } from "./cursor-api-logger";
 import type { AuthInfo, CursorHeaders, DailySpendRow, SetupCache, UsageEvent } from "./cursor-api-types";
-import { asRecord, MAX_USAGE_EVENT_PAGES, toNumber, withTimeout } from "./cursor-api-utils";
+import { asRecord, matchesTeamMember, MAX_USAGE_EVENT_PAGES, safeJson, toNumber, withTimeout } from "./cursor-api-utils";
 import { ensureSetup } from "./cursor-setup";
 import { normalizeUsageEventRequests, parseUsageEvent } from "./cursor-usage-parsing";
 
@@ -75,22 +75,20 @@ async function resolveDashboardUserId(
     return null;
   }
 
-  const data = await res.json();
+  const data = asRecord(await safeJson(res));
+  if (!data) {
+    apiLog("get-team-spend failed while resolving dashboard user id: invalid JSON");
+    return null;
+  }
   const members: unknown[] = Array.isArray(data.teamMemberSpend) ? data.teamMemberSpend : [];
   for (const member of members) {
     const record = asRecord(member);
     if (!record) continue;
 
-    const memberEmail = typeof record.email === "string" ? record.email : null;
-    const memberAuthId = typeof record.authId === "string" ? record.authId : null;
     const memberUserId = toNumber(record.userId);
     if (memberUserId === null) continue;
 
-    if (
-      (auth.email && memberEmail === auth.email) ||
-      (memberAuthId && memberAuthId === auth.userId) ||
-      String(record.userId) === auth.userId
-    ) {
+    if (matchesTeamMember(record, auth)) {
       return memberUserId;
     }
   }
@@ -142,7 +140,11 @@ export async function fetchDailySpendByCategory(
     return [];
   }
 
-  const data = await res.json();
+  const data = asRecord(await safeJson(res));
+  if (!data) {
+    apiLog("get-daily-spend-by-category failed: invalid JSON");
+    return [];
+  }
   const rows: unknown[] = Array.isArray(data.dailySpend) ? data.dailySpend : [];
   const parsedRows: DailySpendRow[] = [];
   for (const row of rows) {
@@ -205,8 +207,12 @@ export async function fetchUsageEvents(opts: FetchUsageEventsOptions = {}): Prom
       break;
     }
 
-    const data = await res.json();
-    const dataRecord = asRecord(data) ?? {};
+    const dataRecord = asRecord(await safeJson(res));
+    if (!dataRecord) {
+      apiLog("get-filtered-usage-events failed: invalid JSON");
+      complete = false;
+      break;
+    }
     const events: unknown[] = Array.isArray(dataRecord.usageEventsDisplay) ? dataRecord.usageEventsDisplay : [];
 
     if (page === 1) {

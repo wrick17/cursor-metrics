@@ -7,6 +7,7 @@
   persistGlobalUi,
   persistLocal,
   refs,
+  resetConversationsPage,
   resetEventsPage,
   setState,
   switchMainTab,
@@ -205,11 +206,13 @@ ui.usageFilter?.addEventListener("change", () => {
   if (next !== "all" && next !== "included" && next !== "ondemand") return;
   local.usageFilter = next;
   resetEventsPage();
+  resetConversationsPage();
   persistLocal();
   persistGlobalUi({ usageFilter: local.usageFilter });
   syncDashboardPrefs();
   renderPricing();
   renderTable();
+  renderConversationsTable();
   renderChart();
   renderBreakdown();
 });

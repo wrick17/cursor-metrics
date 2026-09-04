@@ -9,7 +9,6 @@ const VARIANT_LABELS = {
     "Input > 200k": "Input > 200k",
     Fast: "Fast",
     "Max Mode (1M)": "Max Mode (1M)",
-    "Launch promo (until Aug 2026)": "Launch promo (until Aug 2026)",
     "High reasoning": "High reasoning",
   },
   it: {
@@ -20,7 +19,6 @@ const VARIANT_LABELS = {
     "Input > 200k": "Input > 200k",
     Fast: "Veloce",
     "Max Mode (1M)": "Max Mode (1M)",
-    "Launch promo (until Aug 2026)": "Promo lancio (fino ad ago 2026)",
     "High reasoning": "Ragionamento elevato",
   },
 };
@@ -41,8 +39,6 @@ const VARIANT_DESCRIPTIONS = {
       "3× cheaper per token than Opus 4.7 fast ($30/M input)",
     "claude-opus-4.8.max-long-context":
       "Same per-token rates up to 1M context",
-    "claude-sonnet-5.promo":
-      "Promotional rates through August 31, 2026",
     "gpt-5.high":
       "Same $/M; more reasoning tokens consumed",
     "gpt-5.fast":
@@ -69,8 +65,6 @@ const VARIANT_DESCRIPTIONS = {
       "3× più economico per token rispetto a Opus 4.7 veloce ($30/M input)",
     "claude-opus-4.8.max-long-context":
       "Stesse tariffe per token fino a 1M di contesto",
-    "claude-sonnet-5.promo":
-      "Tariffe promozionali fino al 31 agosto 2026",
     "gpt-5.high":
       "Stesse tariffe $/M; più token di ragionamento consumati",
     "gpt-5.fast":

@@ -20,7 +20,7 @@ import { isOnDemandVisible } from "./on-demand";
 import { buildDashboardState, type DashboardState } from "./dashboard-state";
 import { MAX_STORE_SYNC_PAGES } from "./cursor-api-utils";
 import { invalidateSetupCache } from "./cursor-setup-cache";
-import { formatResetCountdown, t } from "./i18n";
+import { formatResetCountdown, t, tf } from "./i18n";
 import { formatStatusBarUsageText } from "./pool-usage";
 import { shouldShowPremiumRequestsQuota } from "./usage-display";
 import { UsageEventStore } from "./usage-event-store";
@@ -38,6 +38,8 @@ let lastData: UsagePayload | null = null;
 let lastError: string | null = null;
 let lastFetchTime = 0;
 let fetchPromise: Promise<void> | null = null;
+let queuedNonForce = false;
+let queuedForce = false;
 let lastEvents: UsageEvent[] | null = null;
 let lastDailySpend: DailySpendRow[] | null = null;
 let extensionContext: vscode.ExtensionContext;
@@ -191,8 +193,12 @@ export function refreshStatusBarFromLastData(): void {
 export async function updateUsage(opts?: UpdateUsageOptions): Promise<void> {
   const force = opts?.force ?? false;
   while (fetchPromise) {
-    if (!force) return;
-    await fetchPromise;
+    if (!force) {
+      queuedNonForce = true;
+      return;
+    }
+    queuedForce = true;
+    return;
   }
 
   const run = runUpdateUsage(force);
@@ -203,6 +209,15 @@ export async function updateUsage(opts?: UpdateUsageOptions): Promise<void> {
     if (fetchPromise === run) {
       fetchPromise = null;
     }
+  }
+
+  if (queuedForce) {
+    queuedForce = false;
+    queuedNonForce = false;
+    await updateUsage({ force: true });
+  } else if (queuedNonForce) {
+    queuedNonForce = false;
+    await updateUsage();
   }
 }
 
@@ -275,7 +290,7 @@ async function runUpdateUsage(force: boolean): Promise<void> {
       lastError = null;
       updateStatusBar(enriched, buildStatusBarContext());
     } else {
-      lastError = "Could not fetch usage data";
+      lastError = t(locale, "fetchUsageFailed");
       if (!lastData) {
         statusBarItem.text = `$(warning) ${t(locale, "usageUnavailable")}`;
         statusBarItem.tooltip = t(locale, "fetchError");
@@ -303,17 +318,22 @@ async function runUpdateUsage(force: boolean): Promise<void> {
 }
 
 export async function showDetails(): Promise<void> {
+  const locale = getLocale();
+  const refreshLabel = t(locale, "refresh");
+  const openLabel = t(locale, "openDashboard");
+  const logsLabel = t(locale, "showLogs");
+
   if (!lastData) {
-    const items: string[] = ["Refresh", "Open Dashboard", "Show Logs"];
+    const items: string[] = [refreshLabel, openLabel, logsLabel];
     const action = await vscode.window.showWarningMessage(
       lastError
-        ? `Cursor usage unavailable: ${lastError}`
-        : "Cursor usage data is not available yet.",
+        ? tf(locale, "usageUnavailableDetail", { error: lastError })
+        : t(locale, "usageNotAvailableYet"),
       ...items,
     );
-    if (action === "Refresh") await updateUsage({ force: true });
-    else if (action === "Open Dashboard") await vscode.commands.executeCommand(OPEN_DASHBOARD_COMMAND);
-    else if (action === "Show Logs") outputChannel.show();
+    if (action === refreshLabel) await updateUsage({ force: true });
+    else if (action === openLabel) await vscode.commands.executeCommand(OPEN_DASHBOARD_COMMAND);
+    else if (action === logsLabel) outputChannel.show();
     return;
   }
 
@@ -325,19 +345,19 @@ export async function showDetails(): Promise<void> {
     onDemandVisible,
     showPremiumRequests,
     currency: getCurrency(),
-    locale: getLocale(),
+    locale,
   })}`;
-  if (resetsAt) message += ` | ${formatResetCountdown(resetsAt, getLocale())}`;
+  if (resetsAt) message += ` | ${formatResetCountdown(resetsAt, locale)}`;
 
   const action = await vscode.window.showInformationMessage(
     message,
-    "Open Dashboard",
-    "Refresh",
+    openLabel,
+    refreshLabel,
   );
 
-  if (action === "Open Dashboard") {
+  if (action === openLabel) {
     await vscode.commands.executeCommand(OPEN_DASHBOARD_COMMAND);
-  } else if (action === "Refresh") {
+  } else if (action === refreshLabel) {
     await updateUsage({ force: true });
   }
 }
@@ -373,6 +393,8 @@ export function cleanupExtensionRefresh(): void {
     debounceTimer = undefined;
   }
   fetchPromise = null;
+  queuedNonForce = false;
+  queuedForce = false;
   eventStore?.close();
   eventStore = null;
 }

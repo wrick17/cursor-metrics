@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test";
-import { getBillingCycleCutoff, nextMonth, shiftUtcMonth } from "../src/cursor-api-utils";
+import { getBillingCycleCutoff, matchesTeamMember, nextMonth, safeJson, shiftUtcMonth } from "../src/cursor-api-utils";
 
 describe("shiftUtcMonth", () => {
   it("clamps end-of-month days instead of overflowing into the next month", () => {
@@ -28,5 +28,52 @@ describe("nextMonth", () => {
   it("advances by one UTC month with day clamping", () => {
     expect(nextMonth("2026-01-31T12:00:00.000Z")).toBe("2026-02-28T12:00:00.000Z");
     expect(nextMonth("2026-07-02T15:37:46.000Z")).toBe("2026-08-02T15:37:46.000Z");
+  });
+});
+
+describe("safeJson", () => {
+  it("parses a JSON body", async () => {
+    const res = new Response(JSON.stringify({ ok: true }), {
+      headers: { "content-type": "application/json" },
+    });
+    expect(await safeJson(res)).toEqual({ ok: true });
+  });
+
+  it("returns null for an HTML body instead of throwing", async () => {
+    const res = new Response("<html>error</html>", {
+      headers: { "content-type": "text/html" },
+    });
+    expect(await safeJson(res)).toBeNull();
+  });
+});
+
+describe("matchesTeamMember", () => {
+  const auth = { email: "me@example.com", userId: "auth-uuid" };
+
+  it("matches on authId when email and numeric userId differ", () => {
+    expect(
+      matchesTeamMember(
+        { email: "other@example.com", authId: "auth-uuid", userId: 4242 },
+        { email: null, userId: "auth-uuid" },
+      ),
+    ).toBe(true);
+  });
+
+  it("matches on email alone", () => {
+    expect(
+      matchesTeamMember(
+        { email: "me@example.com", authId: "someone-else", userId: 99 },
+        auth,
+      ),
+    ).toBe(true);
+  });
+
+  it("does not match a JWT uuid against a numeric userId without email or authId", () => {
+    expect(
+      matchesTeamMember(
+        { email: "other@example.com", userId: 4242 },
+        { email: null, userId: "auth-uuid" },
+      ),
+    ).toBe(false);
   });
 });

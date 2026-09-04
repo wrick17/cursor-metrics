@@ -1,6 +1,7 @@
 import type { DailySpendRow, UsageEvent } from "./cursor-api";
 import { getBillingCycleCutoff, parseTimestamp } from "./cursor-api-utils";
 import { eventRequestCount, eventTokenCount } from "./cursor-usage-parsing";
+import { startOfUtcDay } from "./utc-day";
 
 export type UsageDuration = "1d" | "7d" | "30d" | "billingCycle";
 
@@ -51,11 +52,6 @@ function sortModelAggregates(
 
 function getBillingCycleStart(resetAtIso: string, now = Date.now()): number {
   return getBillingCycleCutoff(resetAtIso, now);
-}
-
-function startOfUtcDay(ts: number): number {
-  const d = new Date(ts);
-  return Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate());
 }
 
 function eventTimestampMs(event: UsageEvent): number {

@@ -68,7 +68,7 @@ function renderPoolTooltip(context) {
   el.innerHTML =
     '<div class="t-title">' + escapeHtml(title) + "</div>" +
     '<table class="t-table"><thead><tr>' +
-      "<th>Pool</th><th class=\"num\">Used</th><th class=\"num\">Budget</th><th class=\"num\">Balance</th>" +
+      "<th>" + escapeHtml(t("poolTooltipPool")) + "</th><th class=\"num\">" + escapeHtml(t("poolTooltipUsed")) + "</th><th class=\"num\">" + escapeHtml(t("poolTooltipBudget")) + "</th><th class=\"num\">" + escapeHtml(t("poolTooltipBalance")) + "</th>" +
     "</tr></thead><tbody>" +
       '<tr><td><span class="t-dot" style="background:' + AUTO_COLOR + '"></span>' + escapeHtml(t("poolFirstParty")) + "</td>" +
         '<td class="num">' + formatPercent(series.dailyAutoPercent[idx] || 0) + "%</td>" +
@@ -105,7 +105,7 @@ function renderPoolPaceTooltip(context) {
   el.innerHTML =
     '<div class="t-title">' + escapeHtml(title) + "</div>" +
     '<table class="t-table"><thead><tr>' +
-      "<th>Pool</th><th class=\"num\">Daily balance</th>" +
+      "<th>" + escapeHtml(t("poolTooltipPool")) + "</th><th class=\"num\">" + escapeHtml(t("poolDailyPace")) + "</th>" +
     "</tr></thead><tbody>" +
       '<tr><td><span class="t-dot" style="background:' + AUTO_COLOR + '"></span>' + escapeHtml(t("poolFirstParty")) + "</td>" +
         '<td class="num">' + escapeHtml(formatPaceResidual(autoResidual)) + "</td></tr>" +
@@ -133,7 +133,7 @@ function renderPoolPaceChart(series, muted, grid) {
       labels: series.labels,
       datasets: [
         {
-          label: t("poolFirstParty") + " balance",
+          label: t("poolFirstParty") + t("poolLegendBalance"),
           data: autoResiduals,
           backgroundColor: (ctx) => ((ctx.parsed?.y ?? 0) >= 0 ? UNDER_COLOR : OVER_COLOR),
           borderColor: (ctx) => ((ctx.parsed?.y ?? 0) >= 0 ? UNDER_COLOR : OVER_COLOR),
@@ -143,7 +143,7 @@ function renderPoolPaceChart(series, muted, grid) {
           barPercentage: 0.82,
         },
         {
-          label: t("poolApi") + " balance",
+          label: t("poolApi") + t("poolLegendBalance"),
           data: apiResiduals,
           backgroundColor: (ctx) => ((ctx.parsed?.y ?? 0) >= 0 ? "rgba(182, 227, 193, 0.55)" : "rgba(248, 113, 113, 0.55)"),
           borderColor: (ctx) => ((ctx.parsed?.y ?? 0) >= 0 ? "rgba(182, 227, 193, 0.55)" : "rgba(248, 113, 113, 0.55)"),

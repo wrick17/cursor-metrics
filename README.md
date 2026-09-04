@@ -2,6 +2,8 @@
 
 Community-maintained fork of [cursor-metrics](https://github.com/wrick17/cursor-metrics). See Cursor usage in your status bar: included requests, Auto/API pool usage, and on-demand spend, live while you work. Click the status bar item to open a full dashboard inside your editor.
 
+**Current release:** `1.0.0` — resilient fetch, team-aware usage routing, page-wise conversation reads, EN/IT dashboard, and GitHub CI.
+
 ![Cursor Usage extension tooltip](media/extensions-tooltip.png)
 
 ![Cursor Usage dashboard — Utilizzo](media/extensions-dashboard-usage.png)
@@ -39,7 +41,7 @@ Community-maintained fork of [cursor-metrics](https://github.com/wrick17/cursor-
   - Chart tooltip includes per-model values **and daily pool %** (Auto/API consumed that day).
 - **Usage by Model** — sortable breakdown table with chart-matched colors.
 - **Events** — paginated, sortable event log with token breakdown modal and CSV export.
-- **Language selector** (`EN` / `IT`) in the header next to Refresh; choice is persisted.
+- **Language selector** (`EN` / `IT`) and **currency selector** (`USD` / `EUR`) in the header next to Refresh; choices are persisted.
 - **Sticky main tabs:** **Usage**, **Pools**, **Pricing**, and **Activity** (events / conversations).
 - **Pricing tab** with official per-component model rates, variant modes, token cost calculator, actual vs theoretical spend comparison, and pin/reorder for favorite models.
 - **Daily budget reset countdown** on the pool card (renews at midnight UTC).
@@ -52,6 +54,7 @@ Screenshots above use Italian (IT) and EUR; regenerate with `bun run screenshots
 - `Cursor Usage (Community): Open Dashboard` — open the in-editor dashboard.
 - `Cursor Usage (Community): Show Details` — show a quick usage summary message.
 - `Cursor Usage (Community): Refresh` — force a refresh immediately.
+- `Cursor Usage (Community): Refresh Pricing Catalog` — fetch official model rates from Cursor docs and merge them into the local catalog.
 
 ## Settings
 
@@ -84,6 +87,11 @@ Daily pool percentages are derived from included usage events (first-party catal
 - Fetches on activity (editing/focus) instead of constant polling.
 - Caches auth and API responses to avoid redundant requests.
 
+## Quality
+
+- Tests: `bun test --isolate` (VS Code API preloaded via `bunfig.toml`).
+- CI on push/PR: install, test, production build, and verify `media/dashboard/dashboard.js` matches sources.
+
 ## Development
 
 ### Prerequisites
@@ -105,7 +113,7 @@ bun install
 ```bash
 bun run watch      # rebuild extension + dashboard on file changes
 bun run build      # one-off production build
-bun test           # run tests
+bun test --isolate  # run tests
 ```
 
 Press **F5** in VS Code/Cursor with the **Run Cursor Usage Extension** launch config to debug in an Extension Development Host.
@@ -143,13 +151,13 @@ Install a VSIX locally for smoke testing:
 
 ```bash
 # Cursor
-cursor --install-extension build/cursor-usage-0.8.0.vsix
+cursor --install-extension build/cursor-usage-1.0.0.vsix
 
 # VS Code
-code --install-extension build/cursor-usage-0.8.0.vsix
+code --install-extension build/cursor-usage-1.0.0.vsix
 ```
 
-Replace `0.8.0` with the version from `package.json`.
+Replace `1.0.0` with the version from `package.json`.
 
 ### Publish to marketplaces
 
@@ -159,7 +167,7 @@ Publisher: **[fabervi](https://marketplace.visualstudio.com/publishers/fabervi)*
 
 1. Bump `version` in `package.json`
 2. Add a dated entry to `CHANGELOG.md`
-3. Run `bun test`
+3. Run `bun test --isolate`
 4. Build both VSIX files and smoke-test at least one of them locally
 5. Set the publish tokens (see below)
 

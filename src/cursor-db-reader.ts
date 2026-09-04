@@ -1,4 +1,18 @@
 import { closeSync, existsSync, fstatSync, openSync, readSync } from "fs";
+import { homedir } from "os";
+import { join } from "path";
+import { apiLog } from "./cursor-api-logger";
+
+export function getGlobalCursorDbPath(): string {
+  switch (process.platform) {
+    case "darwin":
+      return join(homedir(), "Library/Application Support/Cursor/User/globalStorage/state.vscdb");
+    case "win32":
+      return join(process.env.APPDATA ?? join(homedir(), "AppData/Roaming"), "Cursor/User/globalStorage/state.vscdb");
+    default:
+      return join(homedir(), ".config/Cursor/User/globalStorage/state.vscdb");
+  }
+}
 
 const CURSOR_AUTH_KEYS = ["cursorAuth/accessToken", "cursorAuth/cachedEmail"] as const;
 type CursorAuthKey = (typeof CURSOR_AUTH_KEYS)[number];
@@ -8,6 +22,23 @@ type Varint = { value: number; nextOffset: number };
 type SqliteValue = number | string | null;
 type DecodedField = { value: SqliteValue; byteLength: number };
 type WalIndex = { fd: number; pages: Map<number, number> };
+type PageReader = (pageNumber: number) => Buffer | null;
+
+export type CursorKvRow = { key: string; value: string };
+
+export type CursorKvStore = {
+  get(tableName: string, key: string): string | null;
+  getMany(tableName: string, keys: Iterable<string>): Map<string, string>;
+  getByPrefix(tableName: string, prefix: string): CursorKvRow[];
+};
+
+type OpenSqlite = {
+  fd: number;
+  walIndex: WalIndex | null;
+  pageSize: number;
+  usableSize: number;
+  readDbPage: PageReader;
+};
 
 function decodeVarint(buffer: Buffer, offset: number, limit = buffer.length): Varint | null {
   let value = 0;
@@ -62,26 +93,26 @@ function readSqliteField(buffer: Buffer, offset: number, serialType: number): De
     return value === null ? null : { value, byteLength };
   }
   if (serialType === 7) return { value: null, byteLength };
-  if (serialType % 2 === 0) return { value: null, byteLength };
-  return {
-    value: buffer.toString("utf8", offset, offset + byteLength),
-    byteLength,
-  };
+  if (serialType >= 12) {
+    return {
+      value: buffer.toString("utf8", offset, offset + byteLength),
+      byteLength,
+    };
+  }
+  return { value: null, byteLength };
 }
 
-function readSqliteRecord(page: Buffer, payloadOffset: number, payloadSize: number): SqliteValue[] | null {
-  if (payloadOffset + payloadSize > page.length) return null;
-
-  const headerSizeVarint = decodeVarint(page, payloadOffset, payloadOffset + payloadSize);
+function readSqliteRecord(payload: Buffer): SqliteValue[] | null {
+  const headerSizeVarint = decodeVarint(payload, 0, payload.length);
   if (!headerSizeVarint) return null;
 
-  const headerEnd = payloadOffset + headerSizeVarint.value;
-  if (headerEnd > payloadOffset + payloadSize) return null;
+  const headerEnd = headerSizeVarint.value;
+  if (headerEnd > payload.length) return null;
 
   const serialTypes: number[] = [];
   let serialOffset = headerSizeVarint.nextOffset;
   while (serialOffset < headerEnd) {
-    const serialType = decodeVarint(page, serialOffset, headerEnd);
+    const serialType = decodeVarint(payload, serialOffset, headerEnd);
     if (!serialType) return null;
     serialTypes.push(serialType.value);
     serialOffset = serialType.nextOffset;
@@ -90,7 +121,7 @@ function readSqliteRecord(page: Buffer, payloadOffset: number, payloadSize: numb
   const values: SqliteValue[] = [];
   let fieldOffset = headerEnd;
   for (const serialType of serialTypes) {
-    const field = readSqliteField(page, fieldOffset, serialType);
+    const field = readSqliteField(payload, fieldOffset, serialType);
     if (!field) return null;
     values.push(field.value);
     fieldOffset += field.byteLength;
@@ -98,7 +129,49 @@ function readSqliteRecord(page: Buffer, payloadOffset: number, payloadSize: numb
   return values;
 }
 
-function readTableLeafRecord(page: Buffer, cellOffset: number): SqliteValue[] | null {
+function tableLeafLocalPayload(payloadSize: number, usableSize: number): { local: number; hasOverflow: boolean } {
+  const maxLocal = usableSize - 35;
+  const minLocal = Math.floor(((usableSize - 12) * 32) / 255) - 23;
+  if (payloadSize <= maxLocal) return { local: payloadSize, hasOverflow: false };
+  let local = minLocal + ((payloadSize - minLocal) % (usableSize - 4));
+  if (local > maxLocal) local = minLocal;
+  return { local, hasOverflow: true };
+}
+
+function readOverflowChain(
+  readDbPage: PageReader,
+  firstPage: number,
+  remainingBytes: number,
+  pageSize: number,
+): Buffer | null {
+  const chunks: Buffer[] = [];
+  let pageNumber = firstPage;
+  let left = remainingBytes;
+  const seen = new Set<number>();
+
+  while (pageNumber > 0 && left > 0) {
+    if (seen.has(pageNumber)) return null;
+    seen.add(pageNumber);
+    const page = readDbPage(pageNumber);
+    if (!page || page.length < 4) return null;
+    const nextPage = page.readUInt32BE(0);
+    const data = page.subarray(4, Math.min(page.length, 4 + left));
+    chunks.push(data);
+    left -= data.length;
+    pageNumber = nextPage;
+  }
+
+  if (left > 0) return null;
+  return Buffer.concat(chunks);
+}
+
+function readTableLeafRecord(
+  page: Buffer,
+  cellOffset: number,
+  readDbPage: PageReader,
+  usableSize: number,
+  pageSize: number,
+): SqliteValue[] | null {
   if (cellOffset >= page.length) return null;
   const payloadSize = decodeVarint(page, cellOffset);
   if (!payloadSize) return null;
@@ -106,7 +179,20 @@ function readTableLeafRecord(page: Buffer, cellOffset: number): SqliteValue[] | 
   const rowId = decodeVarint(page, payloadSize.nextOffset);
   if (!rowId) return null;
 
-  return readSqliteRecord(page, rowId.nextOffset, payloadSize.value);
+  const { local, hasOverflow } = tableLeafLocalPayload(payloadSize.value, usableSize);
+  const payloadStart = rowId.nextOffset;
+  if (payloadStart + local > page.length) return null;
+
+  const localBytes = page.subarray(payloadStart, payloadStart + local);
+  if (!hasOverflow) {
+    return readSqliteRecord(localBytes);
+  }
+
+  if (payloadStart + local + 4 > page.length) return null;
+  const overflowPage = page.readUInt32BE(payloadStart + local);
+  const overflow = readOverflowChain(readDbPage, overflowPage, payloadSize.value - local, pageSize);
+  if (!overflow) return null;
+  return readSqliteRecord(Buffer.concat([localBytes, overflow]));
 }
 
 function getSqlitePageSize(header: Buffer, walPageSize?: number): number {
@@ -167,8 +253,10 @@ function readPage(
 }
 
 function collectTableLeafRecords(
-  readDbPage: (pageNumber: number) => Buffer | null,
+  readDbPage: PageReader,
   rootPage: number,
+  usableSize: number,
+  pageSize: number,
   onRecord: (record: SqliteValue[]) => boolean,
   seenPages = new Set<number>(),
 ): void {
@@ -191,28 +279,38 @@ function collectTableLeafRecords(
       if (pointerOffset + 2 > page.length) break;
       const cellOffset = page.readUInt16BE(pointerOffset);
       if (cellOffset + 4 > page.length) continue;
-      collectTableLeafRecords(readDbPage, page.readUInt32BE(cellOffset), onRecord, seenPages);
+      collectTableLeafRecords(
+        readDbPage,
+        page.readUInt32BE(cellOffset),
+        usableSize,
+        pageSize,
+        onRecord,
+        seenPages,
+      );
     }
 
     const rightMostPage = page.readUInt32BE(btreeHeaderOffset + 8);
-    collectTableLeafRecords(readDbPage, rightMostPage, onRecord, seenPages);
+    collectTableLeafRecords(readDbPage, rightMostPage, usableSize, pageSize, onRecord, seenPages);
     return;
   }
 
   for (let i = 0; i < cellCount; i++) {
     const pointerOffset = cellPointerOffset + i * 2;
     if (pointerOffset + 2 > page.length) break;
-    const record = readTableLeafRecord(page, page.readUInt16BE(pointerOffset));
+    const record = readTableLeafRecord(
+      page,
+      page.readUInt16BE(pointerOffset),
+      readDbPage,
+      usableSize,
+      pageSize,
+    );
     if (record && !onRecord(record)) return;
   }
 }
 
-function findTableRootPage(
-  readDbPage: (pageNumber: number) => Buffer | null,
-  tableName: string,
-): number | null {
+function findTableRootPage(ctx: OpenSqlite, tableName: string): number | null {
   let rootPage: number | null = null;
-  collectTableLeafRecords(readDbPage, 1, (record) => {
+  collectTableLeafRecords(ctx.readDbPage, 1, ctx.usableSize, ctx.pageSize, (record) => {
     const [type, name, , page] = record;
     if (type === "table" && name === tableName && typeof page === "number" && page > 0) {
       rootPage = page;
@@ -223,43 +321,102 @@ function findTableRootPage(
   return rootPage;
 }
 
-function findItemTableRootPage(readDbPage: (pageNumber: number) => Buffer | null): number | null {
-  return findTableRootPage(readDbPage, "ItemTable");
+function kvFromRecord(record: SqliteValue[]): CursorKvRow | null {
+  if (record.length < 2) return null;
+  const [recordKey, value] = record;
+  if (typeof recordKey !== "string" || typeof value !== "string") return null;
+  return { key: recordKey, value };
+}
+
+function collectMatchingRows(
+  ctx: OpenSqlite,
+  tableName: string,
+  onRow: (row: CursorKvRow) => boolean,
+): void {
+  const rootPage = findTableRootPage(ctx, tableName);
+  if (rootPage === null) return;
+  collectTableLeafRecords(ctx.readDbPage, rootPage, ctx.usableSize, ctx.pageSize, (record) => {
+    const row = kvFromRecord(record);
+    if (!row) return true;
+    return onRow(row);
+  });
+}
+
+function openSqlite(dbPath: string): OpenSqlite {
+  const fd = openSync(dbPath, "r");
+  const header = Buffer.alloc(100);
+  readSync(fd, header, 0, header.length, 0);
+  if (header.toString("utf8", 0, 16) !== "SQLite format 3\0") {
+    closeSync(fd);
+    throw new Error("Invalid SQLite database header");
+  }
+
+  const pageSize = getSqlitePageSize(header);
+  const reserved = header[20] ?? 0;
+  const usableSize = pageSize - reserved;
+  const walIndex = indexWalFile(dbPath, pageSize);
+  const readDbPage = (pageNumber: number) => readPage(fd, walIndex, pageNumber, pageSize);
+  return { fd, walIndex, pageSize, usableSize, readDbPage };
+}
+
+function closeSqlite(ctx: OpenSqlite): void {
+  if (ctx.walIndex) closeSync(ctx.walIndex.fd);
+  closeSync(ctx.fd);
+}
+
+function createKvStore(ctx: OpenSqlite): CursorKvStore {
+  return {
+    get(tableName, key) {
+      let found: string | null = null;
+      collectMatchingRows(ctx, tableName, (row) => {
+        if (row.key === key) {
+          found = row.value;
+          return false;
+        }
+        return true;
+      });
+      return found;
+    },
+    getMany(tableName, keys) {
+      const remaining = new Set([...keys].filter(Boolean));
+      const values = new Map<string, string>();
+      if (remaining.size === 0) return values;
+      collectMatchingRows(ctx, tableName, (row) => {
+        if (!remaining.has(row.key)) return true;
+        values.set(row.key, row.value);
+        remaining.delete(row.key);
+        return remaining.size > 0;
+      });
+      return values;
+    },
+    getByPrefix(tableName, prefix) {
+      const rows: CursorKvRow[] = [];
+      if (!prefix) return rows;
+      collectMatchingRows(ctx, tableName, (row) => {
+        if (row.key.startsWith(prefix)) rows.push(row);
+        return true;
+      });
+      return rows;
+    },
+  };
+}
+
+export function withCursorKvStore<T>(dbPath: string, fn: (store: CursorKvStore) => T): T | null {
+  if (!existsSync(dbPath)) return null;
+  let ctx: OpenSqlite | null = null;
+  try {
+    ctx = openSqlite(dbPath);
+    return fn(createKvStore(ctx));
+  } catch {
+    apiLog("Cursor KV read failed");
+    return null;
+  } finally {
+    if (ctx) closeSqlite(ctx);
+  }
 }
 
 export function readTableKeyValue(dbPath: string, tableName: string, key: string): string | null {
-  const fd = openSync(dbPath, "r");
-  let walIndex: WalIndex | null = null;
-  try {
-    const header = Buffer.alloc(100);
-    readSync(fd, header, 0, header.length, 0);
-    if (header.toString("utf8", 0, 16) !== "SQLite format 3\0") {
-      return null;
-    }
-
-    const pageSize = getSqlitePageSize(header);
-    walIndex = indexWalFile(dbPath, pageSize);
-    const readDbPage = (pageNumber: number) => readPage(fd, walIndex, pageNumber, pageSize);
-    const rootPage = findTableRootPage(readDbPage, tableName);
-    if (rootPage === null) return null;
-
-    let found: string | null = null;
-    collectTableLeafRecords(readDbPage, rootPage, (record) => {
-      if (record.length < 2) return true;
-      const [recordKey, value] = record;
-      if (recordKey === key && typeof value === "string") {
-        found = value;
-        return false;
-      }
-      return true;
-    });
-    return found;
-  } catch {
-    return null;
-  } finally {
-    if (walIndex) closeSync(walIndex.fd);
-    closeSync(fd);
-  }
+  return withCursorKvStore(dbPath, (store) => store.get(tableName, key));
 }
 
 export function readCursorAuthValuesFromDb(dbPath: string): CursorAuthValues {
@@ -274,9 +431,12 @@ export function readCursorAuthValuesFromDb(dbPath: string): CursorAuthValues {
     }
 
     const pageSize = getSqlitePageSize(header);
+    const reserved = header[20] ?? 0;
+    const usableSize = pageSize - reserved;
     walIndex = indexWalFile(dbPath, pageSize);
     const readDbPage = (pageNumber: number) => readPage(fd, walIndex, pageNumber, pageSize);
-    const itemTableRootPage = findItemTableRootPage(readDbPage);
+    const ctx: OpenSqlite = { fd, walIndex, pageSize, usableSize, readDbPage };
+    const itemTableRootPage = findTableRootPage(ctx, "ItemTable");
     if (itemTableRootPage === null) {
       throw new Error("Could not find ItemTable root page");
     }
@@ -284,7 +444,7 @@ export function readCursorAuthValuesFromDb(dbPath: string): CursorAuthValues {
     const remainingKeys = new Set<CursorAuthKey>(CURSOR_AUTH_KEYS);
     const values: CursorAuthValues = {};
 
-    collectTableLeafRecords(readDbPage, itemTableRootPage, (record) => {
+    collectTableLeafRecords(readDbPage, itemTableRootPage, usableSize, pageSize, (record) => {
       if (record.length < 2) return true;
       const [key, value] = record;
       if (typeof key === "string" && typeof value === "string" && remainingKeys.has(key as CursorAuthKey)) {

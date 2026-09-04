@@ -2,6 +2,7 @@ import type { DailySpendRow, UsageEvent, UsagePayload } from "./cursor-api";
 import { parseTimestamp } from "./cursor-api-utils";
 import { CARD_HELP } from "./card-help";
 import { getDurationCutoff, type UsageDuration } from "./model-breakdown";
+import { startOfUtcDay } from "./utc-day";
 import { eventRequestCount, eventTokenCount } from "./cursor-usage-parsing";
 import {
   aggregateTheoreticalByModel,
@@ -67,11 +68,6 @@ export type DashboardState = {
 };
 
 const DAY_MS = 86_400_000;
-
-function startOfUtcDay(ts: number): number {
-  const d = new Date(ts);
-  return Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate());
-}
 
 function isIncluded(event: UsageEvent): boolean {
   return event.kind === "Included";

@@ -1,6 +1,7 @@
 import type { UsageEvent, UsagePayload } from "./cursor-api-types";
 import { getBillingCycleCutoff } from "./cursor-api-utils";
 import { resolveModelPricing } from "./model-pricing";
+import { startOfUtcDay } from "./utc-day";
 
 const DAY_MS = 86_400_000;
 
@@ -36,11 +37,6 @@ export type PoolDepletionEstimate = {
   auto: PoolDepletionProjection;
   api: PoolDepletionProjection;
 };
-
-function startOfUtcDay(ts: number): number {
-  const d = new Date(ts);
-  return Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate());
-}
 
 function buildDayBuckets(cycleStart: number, now: number): number[] {
   const start = startOfUtcDay(cycleStart);

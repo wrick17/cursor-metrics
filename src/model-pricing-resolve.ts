@@ -2,6 +2,7 @@ import rawCatalog from "./data/model-pricing.json";
 import { mergeCatalogs } from "./pricing-catalog-merge";
 import type {
   ModelPricingCatalog,
+  ModelPricingCatalogOverlay,
   ModelPricingEntry,
   ModelPricingVariant,
   ResolvedModelPricing,
@@ -218,7 +219,7 @@ function validateCatalog(data: unknown): ModelPricingCatalog {
 
 let cachedCatalog: ModelPricingCatalog | null = null;
 let aliasIndex: Map<string, ResolvedModelPricing> | null = null;
-let catalogOverlay: Partial<ModelPricingCatalog> | null = null;
+let catalogOverlay: ModelPricingCatalogOverlay | null = null;
 let pricingCatalogSyncedAt: number | null = null;
 let catalogRuntimeOnlyModelIds: string[] = [];
 
@@ -232,7 +233,7 @@ function normalizeDisplayNameForMatch(name: string): string {
 }
 
 export function setPricingCatalogOverlay(
-  overlay: Partial<ModelPricingCatalog> | null,
+  overlay: ModelPricingCatalogOverlay | null,
   syncedAt?: number | null,
   runtimeOnlyModelIds?: string[] | null,
 ): void {

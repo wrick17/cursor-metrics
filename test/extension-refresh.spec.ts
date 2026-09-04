@@ -182,7 +182,7 @@ describe("updateUsage force refresh", () => {
     expect(upsertEventsCalls).toBe(1);
   });
 
-  it("awaits an in-flight fetch when force refresh is requested", async () => {
+  it("coalesces concurrent force refreshes into one extra fetch", async () => {
     firstFetchGate = new Promise<void>((resolve) => {
       releaseFirstFetch = resolve;
     });
@@ -190,11 +190,29 @@ describe("updateUsage force refresh", () => {
     const first = updateUsage({ force: true });
     await new Promise((r) => setTimeout(r, 0));
     const second = updateUsage({ force: true });
+    const third = updateUsage({ force: true });
 
     releaseFirstFetch?.();
-    await Promise.all([first, second]);
+    await Promise.all([first, second, third]);
 
-    expect(fetchUsageDataCalls).toBeGreaterThanOrEqual(2);
+    expect(fetchUsageDataCalls).toBe(2);
+  });
+
+  it("queues a non-force refresh until the in-flight fetch finishes", async () => {
+    firstFetchGate = new Promise<void>((resolve) => {
+      releaseFirstFetch = resolve;
+    });
+
+    const first = updateUsage({ force: true });
+    await new Promise((r) => setTimeout(r, 0));
+    const queued = updateUsage();
+    await new Promise((r) => setTimeout(r, 0));
+    expect(fetchUsageDataCalls).toBe(1);
+
+    releaseFirstFetch?.();
+    await Promise.all([first, queued]);
+
+    expect(fetchUsageDataCalls).toBe(2);
   });
 
   it("records warnings when events fetch fails but still posts state", async () => {

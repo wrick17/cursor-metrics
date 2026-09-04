@@ -1,7 +1,8 @@
-import type { ModelPricingCatalog, ModelPricingEntry, PlanPricingInfo } from "./model-pricing-types";
+import type { ModelPricingCatalog, ModelPricingCatalogOverlay, ModelPricingEntry, ParsedPlanPricingInfo } from "./model-pricing-types";
 import { getBundledModelPricingCatalog, validateCatalog } from "./model-pricing-resolve";
 import { mergeCatalogsWithStats } from "./pricing-catalog-merge";
 import { PricingCatalogStore, type PricingCatalogOverlay } from "./pricing-catalog-store";
+import { withTimeout } from "./cursor-api-utils";
 
 export const PRICING_DOCS_URL = "https://cursor.com/docs/models-and-pricing.md";
 
@@ -144,12 +145,17 @@ function parsePlanPrice(priceCell: string): number {
   return usd ? Number(usd[1]) : 0;
 }
 
-function parseApiUsageIncluded(cell: string): number {
+/** Returns undefined when the cell has no explicit dollar amount (e.g. "Included"). */
+function parseApiUsageIncluded(cell: string): number | undefined {
   const match = cell.match(/\$([0-9]+)/);
-  return match ? Number(match[1]) : 0;
+  if (match) return Number(match[1]);
+  if (cell.trim().toLowerCase().includes("not included")) return 0;
+  return undefined;
 }
 
-export function parseMarkdownPlans(markdown: string): PlanPricingInfo[] {
+export type { ParsedPlanPricingInfo } from "./model-pricing-types";
+
+export function parseMarkdownPlans(markdown: string): ParsedPlanPricingInfo[] {
   const plansSection = markdown.match(/## Plans[\s\S]*?(?=\n##\s|$)/i)?.[0] ?? "";
   const rows = parseMarkdownTable(plansSection);
   if (rows.length < 2) return [];
@@ -161,16 +167,17 @@ export function parseMarkdownPlans(markdown: string): PlanPricingInfo[] {
 
   if (planIdx < 0 || priceIdx < 0 || usageIdx < 0) return [];
 
-  const plans: PlanPricingInfo[] = [];
+  const plans: ParsedPlanPricingInfo[] = [];
   for (const row of rows.slice(1)) {
     const id = parsePlanId(row[planIdx] ?? "");
     if (!id) continue;
     const name = parseModelCell(row[planIdx] ?? "").replace(/\*\*/g, "").trim();
+    const apiUsageIncluded = parseApiUsageIncluded(row[usageIdx] ?? "");
     plans.push({
       id,
       name: id === "start" ? "Start (India)" : name.replace(/\s*\(.*\)\s*$/, "").trim(),
       priceMonthly: parsePlanPrice(row[priceIdx] ?? ""),
-      apiUsageIncluded: parseApiUsageIncluded(row[usageIdx] ?? ""),
+      ...(apiUsageIncluded !== undefined ? { apiUsageIncluded } : {}),
     });
   }
   return plans;
@@ -207,7 +214,7 @@ export function buildOverlayFromMarkdown(
   markdown: string,
   baseCatalog: ModelPricingCatalog = getBundledModelPricingCatalog(),
 ): {
-  overlay: Partial<ModelPricingCatalog>;
+  overlay: ModelPricingCatalogOverlay;
   warnings: string[];
   updated: number;
   added: number;
@@ -272,7 +279,7 @@ export function buildOverlayFromMarkdown(
   const cursorTokenRatePerMillion = parseCursorTokenRate(markdown);
   const today = new Date().toISOString().slice(0, 10);
 
-  const overlay: Partial<ModelPricingCatalog> = {
+  const overlay: ModelPricingCatalogOverlay = {
     sourceUrl: baseCatalog.sourceUrl,
     lastUpdated: today,
     models: overlayModels,
@@ -301,7 +308,7 @@ export async function fetchPricingDocsMarkdown(
   url: string = PRICING_DOCS_URL,
   fetchFn: typeof fetch = fetch,
 ): Promise<string> {
-  const response = await fetchFn(url);
+  const response = await fetchFn(url, withTimeout());
   if (!response.ok) {
     throw new Error(`Failed to fetch pricing docs (${response.status})`);
   }

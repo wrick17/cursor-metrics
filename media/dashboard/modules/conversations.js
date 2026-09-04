@@ -103,11 +103,11 @@ function renderConversationsPagination(paged) {
     "</span>" +
     '<div class="pagination-controls">' +
       '<select id="conversations-page-size" class="pagination-size" aria-label="' + escapeHtml(t("conversationsPerPage")) + '">' + sizeOptions + "</select>" +
-      '<button type="button" data-action="first"' + (atFirst ? " disabled" : "") + ' aria-label="First page">\u00ab</button>' +
-      '<button type="button" data-action="prev"' + (atFirst ? " disabled" : "") + ' aria-label="Previous page">\u2039</button>' +
+      '<button type="button" data-action="first"' + (atFirst ? " disabled" : "") + ' aria-label="' + escapeHtml(t("pageFirst")) + '">\u00ab</button>' +
+      '<button type="button" data-action="prev"' + (atFirst ? " disabled" : "") + ' aria-label="' + escapeHtml(t("pagePrev")) + '">\u2039</button>' +
       '<span class="pagination-page">' + paged.page + " / " + paged.totalPages + "</span>" +
-      '<button type="button" data-action="next"' + (atLast ? " disabled" : "") + ' aria-label="Next page">\u203a</button>' +
-      '<button type="button" data-action="last"' + (atLast ? " disabled" : "") + ' aria-label="Last page">\u00bb</button>' +
+      '<button type="button" data-action="next"' + (atLast ? " disabled" : "") + ' aria-label="' + escapeHtml(t("pageNext")) + '">\u203a</button>' +
+      '<button type="button" data-action="last"' + (atLast ? " disabled" : "") + ' aria-label="' + escapeHtml(t("pageLast")) + '">\u00bb</button>' +
     "</div>";
 }
 
@@ -131,7 +131,7 @@ export function renderConversationsTable() {
   }
 
   if (rows.length === 0) {
-    ui.conversationsBody.innerHTML = '<tr><td colspan="7" style="text-align:center; padding:24px;" class="muted">' + t("noConversationsInRange") + "</td></tr>";
+    ui.conversationsBody.innerHTML = '<tr><td colspan="7" style="text-align:center; padding:24px;" class="muted">' + escapeHtml(t("noConversationsInRange")) + "</td></tr>";
     if (ui.conversationsPagination) ui.conversationsPagination.innerHTML = "";
     return;
   }

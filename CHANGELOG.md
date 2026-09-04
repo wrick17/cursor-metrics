@@ -2,6 +2,33 @@
 
 All notable changes to this project are documented in this file.
 
+## [Unreleased]
+
+## [1.0.0] - 2026-09-04
+
+First stable community release after three corrective audit waves: resilient API fetch, team-aware usage routing, page-wise conversation DB reads, dashboard i18n/UX hardening, and CI.
+
+### Added
+- GitHub Actions CI: `bun test --isolate`, production build, and committed `dashboard.js` freshness check (Bun 1.4.0).
+- `matchesTeamMember` helper (`email`, `authId`, `userId`) and tests for team usage fetch paths.
+- Page-wise btree reader for conversation titles/messages (prefix scan, WAL, overflow payloads).
+- `isSafeConversationId` validation and CSP/nonce dashboard security tests.
+- Shared `startOfUtcDay` (`src/utc-day.ts`); `test/usage-fetch-core.spec.ts` and extended conversation btree tests.
+
+### Changed
+- Grok 4.5 Fast output rate is **$18**/M (official docs); bundled catalog `lastUpdated` is `2026-09-03`.
+- Pricing overlay from docs still updates rates/notes only — **aliases and Fast variants stay bundled** (Grok 4.5 Fast `$18` is the source of truth until a later parser change).
+- Bundled catalog also picks up Claude Fable 5.1, Gemini 3.7/3.8 Flash, Claude Sonnet 5 rate cuts (promo variant removed), GPT-5.6 Sol, and Claude Opus 4.7 Fast output `$10`.
+- Usage chart offers spend / tokens / requests (the 0.8.0 note that the chart always shows tokens is outdated).
+- Fetch paths tolerate non-JSON error bodies; incomplete setup is not cached; non-force refreshes queue instead of dropping; concurrent force refreshes coalesce to one replay.
+- Setup without Stripe is not cached as a personal plan; conversation titles/messages read Cursor `state.vscdb` page-wise instead of loading the whole file.
+- Team usage matches members by `authId`, skips the usage-summary fast-path for team members, and copies pool % from summary while included requests come from `get-team-spend`.
+- Dashboard: residual i18n (reset countdown, pool pace, `Auto` label), `usageFilter` refreshes conversations, kind/pool CSS allowlists, shared `formatRateUsd`, pinned-model cap (50 ids).
+- Event-store persistence via temp file + atomic rename; pricing docs fetch uses the same 15s timeout as other API calls.
+
+### Removed
+- Dead `cursor-state-db.ts` sql.js reader (superseded by btree KV reader for conversations).
+
 ## [0.8.1] - 2026-08-13
 
 ### Added

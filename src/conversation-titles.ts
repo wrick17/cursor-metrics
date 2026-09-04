@@ -1,5 +1,5 @@
 import type { ConversationMessage } from "./cursor-api-types";
-import { getGlobalCursorDbPath, queryTableValue, withCursorStateDb } from "./cursor-state-db";
+import { getGlobalCursorDbPath, withCursorKvStore } from "./cursor-db-reader";
 
 export { getGlobalCursorDbPath };
 
@@ -53,19 +53,23 @@ function parseComposerDataTitle(raw: string | null): string | null {
 
 export async function buildConversationTitleMap(
   conversationIds: string[],
-  extensionPath: string,
+  _extensionPath: string,
 ): Promise<Record<string, string>> {
   const uniqueIds = [...new Set(conversationIds.filter(Boolean))];
   if (uniqueIds.length === 0) return {};
 
-  const titles = await withCursorStateDb(extensionPath, (db) => {
-    const map = parseComposerHeaders(queryTableValue(db, "ItemTable", "composer.composerHeaders"));
-
-    for (const id of uniqueIds) {
-      if (map.has(id)) continue;
-      const composerData = queryTableValue(db, "cursorDiskKV", `composerData:${id}`);
-      const title = parseComposerDataTitle(composerData);
-      if (title) map.set(id, title);
+  const titles = withCursorKvStore(getGlobalCursorDbPath(), (store) => {
+    const map = parseComposerHeaders(store.get("ItemTable", "composer.composerHeaders"));
+    const missing = uniqueIds.filter((id) => !map.has(id));
+    if (missing.length > 0) {
+      const composerRows = store.getMany(
+        "cursorDiskKV",
+        missing.map((id) => `composerData:${id}`),
+      );
+      for (const id of missing) {
+        const title = parseComposerDataTitle(composerRows.get(`composerData:${id}`) ?? null);
+        if (title) map.set(id, title);
+      }
     }
     return map;
   });

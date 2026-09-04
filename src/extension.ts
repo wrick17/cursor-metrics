@@ -2,7 +2,9 @@ import * as vscode from "vscode";
 import { configure } from "./cursor-api";
 import { resolveConfiguredUsageDuration } from "./duration-options";
 import { DashboardPanel, OPEN_DASHBOARD_COMMAND } from "./dashboard-panel";
+import { getDashboardLocale } from "./dashboard-locale-state";
 import { OPEN_DURATION_SETTING_COMMAND } from "./tooltip";
+import { t, tf } from "./i18n";
 import {
   cleanupExtensionRefresh,
   getDashboardState,
@@ -21,7 +23,7 @@ export function activate(context: vscode.ExtensionContext) {
   const outputChannel = vscode.window.createOutputChannel("Cursor Usage");
   const statusBarItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Right, 100);
   statusBarItem.command = OPEN_DASHBOARD_COMMAND;
-  statusBarItem.text = "$(loading~spin) Usage";
+  statusBarItem.text = `$(loading~spin) ${t(getDashboardLocale(context), "statusBarUsage")}`;
   statusBarItem.show();
 
   initExtensionRefresh(context, statusBarItem, outputChannel);
@@ -32,22 +34,23 @@ export function activate(context: vscode.ExtensionContext) {
   const showDetailsCmd = vscode.commands.registerCommand("cursor-usage.showDetails", showDetails);
   const refreshCmd = vscode.commands.registerCommand("cursor-usage.refresh", () => updateUsage({ force: true }));
   const refreshPricingCmd = vscode.commands.registerCommand("cursor-usage.refreshPricingCatalog", async () => {
+    const locale = getDashboardLocale(context);
     try {
       const result = await vscode.window.withProgress(
         {
           location: vscode.ProgressLocation.Notification,
-          title: "Cursor Usage: syncing pricing catalog…",
+          title: t(locale, "pricingSyncProgress"),
           cancellable: false,
         },
         () => refreshPricingCatalog(),
       );
       void vscode.window.showInformationMessage(
-        `Pricing catalog updated (${result.updated} models refreshed, ${result.added} new).`,
+        tf(locale, "pricingSyncSuccess", { updated: result.updated, added: result.added }),
       );
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : String(err);
       log(`Pricing catalog sync failed: ${message}`);
-      void vscode.window.showErrorMessage(`Pricing catalog sync failed: ${message}`);
+      void vscode.window.showErrorMessage(tf(locale, "pricingSyncFailed", { error: message }));
     }
   });
   const openDurationSettingCmd = vscode.commands.registerCommand(

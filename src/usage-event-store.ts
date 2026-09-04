@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "fs";
+import { existsSync, mkdirSync, readFileSync, renameSync, unlinkSync, writeFileSync } from "fs";
 import { join } from "path";
 import type { UsageEvent } from "./cursor-api-types";
 import { normalizeUsageEventRequests } from "./cursor-usage-parsing";
@@ -295,6 +295,13 @@ export class UsageEventStore {
 
   private persist(): void {
     if (!this.db) return;
-    writeFileSync(this.dbPath, Buffer.from(this.db.export()));
+    const tmpPath = this.dbPath + ".tmp";
+    writeFileSync(tmpPath, Buffer.from(this.db.export()));
+    try {
+      renameSync(tmpPath, this.dbPath);
+    } catch {
+      if (existsSync(this.dbPath)) unlinkSync(this.dbPath);
+      renameSync(tmpPath, this.dbPath);
+    }
   }
 }

@@ -1,6 +1,7 @@
 
 [test]
 pathIgnorePatterns = ["build/**"]
+preload = ["./test/preload-vscode.ts"]
 
 [serve.static]
 plugins = ["bun-plugin-tailwind"]

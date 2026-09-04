@@ -47,4 +47,33 @@ describe("dashboard ui preferences", () => {
     });
     expect(loadDashboardUiPreferences(ctx)).toEqual({});
   });
+
+  it("does not persist invalid preference fields from a save patch", async () => {
+    const { loadDashboardUiPreferences, saveDashboardUiPreferences } = await import("../src/dashboard-ui-state");
+    const store: Store = {};
+    const ctx = mockContext(store);
+
+    await saveDashboardUiPreferences(ctx, {
+      usageFilter: "bogus",
+      metric: "spend",
+    } as unknown as Parameters<typeof saveDashboardUiPreferences>[1]);
+
+    expect(store.dashboardUiPreferences).toEqual({ metric: "spend" });
+    expect(loadDashboardUiPreferences(ctx)).toEqual({ metric: "spend" });
+  });
+
+  it("caps pinned model ids at 50 entries of 128 characters", async () => {
+    const { loadDashboardUiPreferences, saveDashboardUiPreferences } = await import("../src/dashboard-ui-state");
+    const ctx = mockContext();
+    const tooLong = "a".repeat(129);
+    const ids = Array.from({ length: 60 }, (_, i) => `model-${i}`);
+    ids.push(tooLong);
+
+    await saveDashboardUiPreferences(ctx, { pricingPinnedIds: ids });
+    const saved = loadDashboardUiPreferences(ctx).pricingPinnedIds ?? [];
+    expect(saved).toHaveLength(50);
+    expect(saved[0]).toBe("model-0");
+    expect(saved[49]).toBe("model-49");
+    expect(saved.some((id) => id.length > 128)).toBe(false);
+  });
 });

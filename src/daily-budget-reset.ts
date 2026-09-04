@@ -1,12 +1,8 @@
 import type { DashboardLocale } from "./dashboard-locale";
 import { getDateLocale, t, tf } from "./i18n";
+import { startOfUtcDay } from "./utc-day";
 
 const DAY_MS = 86_400_000;
-
-function startOfUtcDay(ts: number): number {
-  const d = new Date(ts);
-  return Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate());
-}
 
 export function getNextDailyBudgetResetMs(now = Date.now()): number {
   return startOfUtcDay(now) + DAY_MS;

@@ -1,4 +1,4 @@
-import { refs, ui, local } from "./core.js";
+import { refs, ui } from "./core.js";
 import { cardHelpText, getDateLocale, t } from "./i18n.js";
 import {
   escapeHtml,
@@ -27,10 +27,8 @@ function getBillingCycleMeta(resetAtIso) {
 }
 
 function formatBillingCycleValue(daysLeft) {
-  if (local.locale === "it") {
-    return daysLeft + (daysLeft === 1 ? " giorno" : " giorni");
-  }
-  return daysLeft + " day" + (daysLeft === 1 ? "" : "s");
+  const unit = daysLeft === 1 ? t("billingDayOne") : t("billingDayMany");
+  return daysLeft + " " + unit;
 }
 
 export function renderBillingCycleCard(resetAtIso) {
@@ -49,9 +47,7 @@ export function renderBillingCycleCard(resetAtIso) {
     day: "numeric",
     year: "numeric",
   });
-  const footerText = local.locale === "it"
-    ? "Reset il " + resetFormatted + " · " + formatPercent(meta.pct) + "% " + t("cycleElapsed")
-    : "Resets " + resetFormatted + " · " + formatPercent(meta.pct) + "% " + t("cycleElapsed");
+  const footerText = t("billingResets") + " " + resetFormatted + " · " + formatPercent(meta.pct) + "% " + t("cycleElapsed");
 
   return (
     '<div class="card card-billing">' +
@@ -99,7 +95,7 @@ function cardHelpButton(helpKey) {
   if (!text) return "";
   return (
     '<span class="card-help-wrap">' +
-      '<button type="button" class="card-help" aria-label="More info about this metric">?</button>' +
+      '<button type="button" class="card-help" aria-label="' + escapeHtml(t("cardHelpAria")) + '">?</button>' +
       '<span class="card-help-tooltip" role="tooltip">' + escapeHtml(text) + "</span>" +
     "</span>"
   );

@@ -1,6 +1,6 @@
 {
   "sourceUrl": "https://cursor.com/docs/models-and-pricing",
-  "lastUpdated": "2026-08-13",
+  "lastUpdated": "2026-09-03",
   "cursorTokenRatePerMillion": 0.25,
   "plans": [
     {
@@ -144,7 +144,7 @@
           "rates": {
             "input": 4,
             "cacheRead": 1,
-            "output": 12
+            "output": 18
           },
           "description": "Higher per-token rates for faster responses"
         }
@@ -351,6 +351,7 @@
         "output": 50
       },
       "aliases": [],
+      "hidden": true,
       "variants": [
         {
           "id": "thinking",
@@ -363,7 +364,23 @@
           "priceImpact": "sameRateMoreTokens"
         }
       ],
-      "notes": "Requires data retention approval for Enterprise customers, Teams and individual customers with Privacy Mode enabled; Anthropic stores agent input and output data for harm-prevention processes; this data is not used to train or improve Anthropic models or products; Requests that trip a security guardrail are automatically routed to Claude Opus; About 2x the cost of Claude Opus 5; Requires Max Mode on legacy request-based plans"
+      "notes": "Hidden by default; Requires data retention approval for Enterprise customers, Teams and individual customers with Privacy Mode enabled; Anthropic stores agent input and output data for harm-prevention processes; this data is not used to train or improve Anthropic models or products; Requests that trip a security guardrail are automatically routed to Claude Opus; About 2x the cost of Claude Opus 5; Requires Max Mode on legacy request-based plans"
+    },
+    {
+      "id": "claude-fable-5-1",
+      "displayName": "Claude Fable 5.1",
+      "provider": "Anthropic",
+      "pool": "api",
+      "rates": {
+        "input": 10,
+        "cacheWrite": 12.5,
+        "cacheRead": 0.25,
+        "output": 50
+      },
+      "aliases": [
+        "claude-fable-5-1"
+      ],
+      "notes": "Requires data retention approval for Enterprise customers, Teams and individual customers with Privacy Mode enabled; Anthropic stores agent input and output data for harm-prevention processes; this data is not used to train or improve Anthropic models or products; Requests that trip a security guardrail are automatically routed to Claude Opus; Prompt-cache reads are $0.25/M, 75% below the standard cache-read rate; About 2x the cost of Claude Opus 5 on input and output; Requires Max Mode on legacy request-based plans"
     },
     {
       "id": "claude-opus-4.7-fast",
@@ -476,12 +493,14 @@
       "provider": "Anthropic",
       "pool": "api",
       "rates": {
-        "input": 3,
-        "cacheWrite": 3.75,
-        "cacheRead": 0.3,
-        "output": 15
+        "input": 2,
+        "cacheWrite": 2.5,
+        "cacheRead": 0.2,
+        "output": 10
       },
-      "aliases": [],
+      "aliases": [
+        "claude-sonnet-5"
+      ],
       "variants": [
         {
           "id": "thinking",
@@ -490,21 +509,9 @@
             "claude-sonnet-5-thinking"
           ],
           "priceImpact": "sameRateMoreTokens"
-        },
-        {
-          "id": "promo",
-          "label": "Launch promo (until Aug 2026)",
-          "priceImpact": "customRates",
-          "rates": {
-            "input": 2,
-            "cacheWrite": 2.5,
-            "cacheRead": 0.3,
-            "output": 10
-          },
-          "description": "Promotional rates through August 31, 2026"
         }
       ],
-      "notes": "Launch promotion: $2/M input and $10/M output through August 31, 2026; Requires Max Mode on legacy request-based plans; Up to 1M tokens with extended context at the same per-token rates (no long-context surcharge); Uses an updated tokenizer, so the same input can map to more tokens"
+      "notes": "Requires Max Mode on legacy request-based plans; Up to 1M tokens with extended context at the same per-token rates (no long-context surcharge); Uses an updated tokenizer, so the same input can map to more tokens"
     },
     {
       "id": "composer-1",
@@ -614,6 +621,7 @@
       "aliases": [
         "gemini-3-6-flash"
       ],
+      "hidden": true,
       "variants": [
         {
           "id": "high",
@@ -625,6 +633,39 @@
           "priceImpact": "sameRateMoreTokens",
           "description": "Same $/M; higher reasoning effort uses more tokens"
         }
+      ],
+      "notes": "Hidden by default"
+    },
+    {
+      "id": "gemini-3-7-flash",
+      "displayName": "Gemini 3.7 Flash",
+      "provider": "Google",
+      "pool": "api",
+      "rates": {
+        "input": 0.75,
+        "cacheRead": 0.075,
+        "output": 3.5
+      },
+      "aliases": [
+        "gemini-3-7-flash",
+        "gemini-3.7-flash"
+      ],
+      "hidden": true,
+      "notes": "Hidden by default"
+    },
+    {
+      "id": "gemini-3-8-flash",
+      "displayName": "Gemini 3.8 Flash",
+      "provider": "Google",
+      "pool": "api",
+      "rates": {
+        "input": 0.75,
+        "cacheRead": 0.075,
+        "output": 3.5
+      },
+      "aliases": [
+        "gemini-3-8-flash",
+        "gemini-3.8-flash"
       ],
       "notes": "-"
     },
@@ -957,10 +998,10 @@
       "provider": "OpenAI",
       "pool": "api",
       "rates": {
-        "input": 5,
-        "cacheWrite": 6.25,
-        "cacheRead": 0.5,
-        "output": 30
+        "input": 4,
+        "cacheWrite": 5,
+        "cacheRead": 0.4,
+        "output": 20
       },
       "aliases": [
         "gpt-5-6-sol"
@@ -980,7 +1021,7 @@
           "requiresMaxMode": true
         }
       ],
-      "notes": "Requires Max Mode on legacy request-based plans; Agentic and reasoning capabilities; Fast mode is available at 2x pricing; Long context supports up to 1M tokens with 2x input pricing; Cache writes are billed at 1.25x the uncached input rate"
+      "notes": "Requires Max Mode on legacy request-based plans; Agentic and reasoning capabilities; Fast mode is available at 2x pricing; Long context supports up to 1M tokens with 2x input pricing; Cache writes are billed at 1.25x the uncached input rate; Promotional pricing through November 21, 2026"
     },
     {
       "id": "gpt-5.6-terra",

@@ -55,6 +55,15 @@ export type PlanPricingInfo = {
   apiUsageIncluded: number;
 };
 
+/** Parsed from docs when the plans table omits explicit dollar amounts for API usage. */
+export type ParsedPlanPricingInfo = Omit<PlanPricingInfo, "apiUsageIncluded"> & {
+  apiUsageIncluded?: number;
+};
+
+export type ModelPricingCatalogOverlay = Omit<Partial<ModelPricingCatalog>, "plans"> & {
+  plans?: ParsedPlanPricingInfo[];
+};
+
 export type ModelPricingCatalog = {
   sourceUrl: string;
   lastUpdated: string;

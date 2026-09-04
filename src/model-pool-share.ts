@@ -1,5 +1,6 @@
 import type { UsageEvent } from "./cursor-api-types";
 import { isAutoPoolEvent, poolIncludedCostCents } from "./pool-usage-series";
+import { startOfUtcDay } from "./utc-day";
 
 export type ModelPoolKind = "firstParty" | "api";
 
@@ -19,11 +20,6 @@ export type PoolSpendIndex = {
   apiByDay: number[];
   modelByDay: Map<string, ModelDaySpend>;
 };
-
-function startOfUtcDay(ts: number): number {
-  const d = new Date(ts);
-  return Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate());
-}
 
 function emptyDayArray(length: number): number[] {
   return new Array(length).fill(0);

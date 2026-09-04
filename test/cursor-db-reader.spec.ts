@@ -5,7 +5,7 @@ import { Database } from "bun:sqlite";
 import { existsSync, mkdtempSync } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
-import { readCursorAuthValuesFromDb } from "../src/cursor-api";
+import { readCursorAuthValuesFromDb, withCursorKvStore } from "../src/cursor-api";
 
 describe("Cursor auth database reader", () => {
   it("reads auth values from ItemTable without sqlite CLI or native bindings", () => {
@@ -37,5 +37,73 @@ describe("Cursor auth database reader", () => {
     });
 
     db.close();
+  });
+});
+
+describe("Cursor KV database reader", () => {
+  function createKvDb(dirPrefix: string): string {
+    const dbPath = join(mkdtempSync(join(tmpdir(), dirPrefix)), "state.vscdb");
+    const db = new Database(dbPath);
+    db.run("CREATE TABLE ItemTable (key TEXT UNIQUE ON CONFLICT REPLACE, value BLOB)");
+    db.run("CREATE TABLE cursorDiskKV (key TEXT UNIQUE ON CONFLICT REPLACE, value BLOB)");
+    db.run("INSERT INTO ItemTable VALUES (?, ?)", [
+      "composer.composerHeaders",
+      JSON.stringify({ allComposers: [{ composerId: "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee", name: "From headers" }] }),
+    ]);
+    db.run("INSERT INTO cursorDiskKV VALUES (?, ?)", ["composerData:11111111-1111-4111-8111-111111111111", JSON.stringify({ name: "Composer title" })]);
+    db.run("INSERT INTO cursorDiskKV VALUES (?, ?)", [
+      "bubbleId:11111111-1111-4111-8111-111111111111:bubble-a",
+      JSON.stringify({ type: 1, text: "hello" }),
+    ]);
+    db.run("INSERT INTO cursorDiskKV VALUES (?, ?)", [
+      "bubbleId:11111111-1111-4111-8111-111111111111:bubble-b",
+      JSON.stringify({ type: 2, text: "world" }),
+    ]);
+    db.run("INSERT INTO cursorDiskKV VALUES (?, ?)", [
+      "bubbleId:22222222-2222-4222-8222-222222222222:other",
+      JSON.stringify({ type: 1, text: "skip" }),
+    ]);
+    const overflow = JSON.stringify({ name: "x".repeat(9000) });
+    db.run("INSERT INTO cursorDiskKV VALUES (?, ?)", ["composerData:overflow-key", overflow]);
+    db.close();
+    return dbPath;
+  }
+
+  it("reads exact keys and prefix rows without sql.js", () => {
+    const dbPath = createKvDb("cursor-kv-db-");
+    const result = withCursorKvStore(dbPath, (store) => ({
+      headers: store.get("ItemTable", "composer.composerHeaders"),
+      composer: store.get("cursorDiskKV", "composerData:11111111-1111-4111-8111-111111111111"),
+      bubbles: store.getByPrefix("cursorDiskKV", "bubbleId:11111111-1111-4111-8111-111111111111:"),
+      many: store.getMany("cursorDiskKV", [
+        "composerData:11111111-1111-4111-8111-111111111111",
+        "missing",
+      ]),
+    }));
+
+    expect(result?.headers).toContain("From headers");
+    expect(result?.composer).toContain("Composer title");
+    expect(result?.bubbles).toHaveLength(2);
+    expect(result?.many.get("composerData:11111111-1111-4111-8111-111111111111")).toContain("Composer title");
+    expect(result?.many.has("missing")).toBe(false);
+  });
+
+  it("reads WAL-committed KV rows", () => {
+    const dbPath = join(mkdtempSync(join(tmpdir(), "cursor-kv-wal-")), "state.vscdb");
+    const db = new Database(dbPath);
+    db.run("PRAGMA journal_mode = WAL");
+    db.run("CREATE TABLE cursorDiskKV (key TEXT UNIQUE ON CONFLICT REPLACE, value BLOB)");
+    db.run("INSERT INTO cursorDiskKV VALUES (?, ?)", ["composerData:wal-id", JSON.stringify({ name: "Wal title" })]);
+    expect(existsSync(`${dbPath}-wal`)).toBeTrue();
+    const title = withCursorKvStore(dbPath, (store) => store.get("cursorDiskKV", "composerData:wal-id"));
+    expect(title).toContain("Wal title");
+    db.close();
+  });
+
+  it("reads overflow payloads of at least 8 KiB", () => {
+    const dbPath = createKvDb("cursor-kv-overflow-");
+    const raw = withCursorKvStore(dbPath, (store) => store.get("cursorDiskKV", "composerData:overflow-key"));
+    expect(raw?.length).toBeGreaterThan(8000);
+    expect(JSON.parse(raw ?? "{}").name.length).toBe(9000);
   });
 });

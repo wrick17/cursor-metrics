@@ -220,6 +220,11 @@ export function resetEventsPage() {
   persistLocal();
 }
 
+export function resetConversationsPage() {
+  local.conversationsPage = 1;
+  persistLocal();
+}
+
 export function paginateList(items, page, pageSize) {
   const safePageSize = Math.max(1, pageSize);
   const totalItems = items.length;

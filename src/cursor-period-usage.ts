@@ -1,5 +1,5 @@
 import { apiLog } from "./cursor-api-logger";
-import { asRecord, toNumber, withTimeout } from "./cursor-api-utils";
+import { asRecord, safeJson, toNumber, withTimeout } from "./cursor-api-utils";
 
 const CURRENT_PERIOD_USAGE_URL =
   "https://api2.cursor.sh/aiserver.v1.DashboardService/GetCurrentPeriodUsage";
@@ -26,7 +26,12 @@ export async function fetchCurrentPeriodUsage(
     return null;
   }
 
-  return asRecord(await res.json());
+  const data = asRecord(await safeJson(res));
+  if (!data) {
+    apiLog("GetCurrentPeriodUsage returned invalid JSON");
+    return null;
+  }
+  return data;
 }
 
 export function billingCycleEndIso(periodUsage: Record<string, unknown> | null): string | null {

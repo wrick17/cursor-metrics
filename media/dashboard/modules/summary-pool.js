@@ -84,7 +84,7 @@ function renderTodayPaceRow(label, pace) {
   return (
     '<div class="pool-pace-row">' +
       '<span class="pool-pace-label">' + escapeHtml(label) + "</span>" +
-      '<div class="pool-pace-bar" title="Budget ' + formatPercent(allowance) + '%, used ' + formatPercent(used) + '%">' +
+      '<div class="pool-pace-bar" title="' + escapeHtml(t("poolPaceBarTitle")) + " " + formatPercent(allowance) + "%, " + formatPercent(used) + '%">' +
         '<div class="pool-pace-track">' +
           '<div class="pool-pace-used" style="width:' + usedWidth + '%"></div>' +
           budgetZoneSegment +

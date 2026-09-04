@@ -6,8 +6,30 @@ export function asRecord(value: unknown): Record<string, unknown> | null {
   return typeof value === "object" && value !== null ? (value as Record<string, unknown>) : null;
 }
 
+export function matchesTeamMember(
+  record: Record<string, unknown>,
+  auth: { email: string | null; userId: string },
+): boolean {
+  const memberEmail = typeof record.email === "string" ? record.email : null;
+  const memberAuthId = typeof record.authId === "string" ? record.authId : null;
+  return (
+    (!!auth.email && memberEmail === auth.email) ||
+    (!!memberAuthId && memberAuthId === auth.userId) ||
+    String(record.userId) === auth.userId
+  );
+}
+
 export function withTimeout(init: RequestInit = {}): RequestInit {
   return { ...init, signal: AbortSignal.timeout(FETCH_TIMEOUT_MS) };
+}
+
+/** Parse JSON bodies; HTML/proxy error pages return null instead of throwing. */
+export async function safeJson(res: Response): Promise<unknown | null> {
+  try {
+    return await res.json();
+  } catch {
+    return null;
+  }
 }
 
 export function toNumber(value: unknown): number | null {
